@@ -7,8 +7,8 @@ import random
 import re
 import sys
 
-from PySide6.QtWidgets import QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox, QMessageBox
+from PySide6.QtCore import Qt, Signal, QAbstractTableModel
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, QPushButton,
                                QHBoxLayout)
 
@@ -45,7 +45,6 @@ class ExtensionPicker(QWidget):
         self.setWindowTitle('Extension Picker')
         self.setWindowModality(Qt.ApplicationModal)
         self.setLayout(layout)
-        self._error_message = None  # Holds a dialog
 
         layout.addWidget(QLabel('Select Extensions:'), alignment=Qt.AlignHCenter)
 
@@ -87,6 +86,11 @@ class HomeWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.filter_extensions = {key: True for key in EXTENSIONS}
+        self.selected_path = ''  # The folder to convert
+        self.path_select_time = None
+        self.target_paths = {}
+        self.cancel_folder_open = False
+
         self.ext_picker_modal = ExtensionPicker(self.filter_extensions)
         self.ext_picker_modal.request_extension_updated.connect(self.handle_extension_selection_updated)
 
@@ -94,20 +98,24 @@ class HomeWindow(QWidget):
         layout = QVBoxLayout()
         self.setWindowTitle('Batch image converter')
         self.setLayout(layout)
-        self._error_message = None  # Holds a dialog
 
         # Add user controls for choosing a folder to convert
+        path_picker_header = QHBoxLayout()
+        layout.addLayout(path_picker_header)
+        path_picker_header.addWidget(QLabel('Selected Folder:'))
+        # ....
+        path_picker_lbl = QLabel()
+        path_picker_header.addWidget(path_picker_lbl)
+        path_picker_header.addStretch()
+        self.path_picker_lbl = path_picker_lbl
+        self.clear_selected_path()
+        # ....
         path_picker_controls = QHBoxLayout()
         layout.addLayout(path_picker_controls)
-        # ....
-        path_picker_field = QLineEdit()
-        path_picker_field.setPlaceholderText('Pick a folder')
-        path_picker_controls.addWidget(path_picker_field)
-        self.path_picker_field = path_picker_field
-        # ....
         path_picker_btn = QPushButton('Choose Folder')
         path_picker_btn.clicked.connect(self.handle_choose_path)
         path_picker_controls.addWidget(path_picker_btn)
+        path_picker_controls.addStretch()
         self.path_picker_btn = path_picker_btn
 
         # Add a settings area
@@ -179,20 +187,89 @@ class HomeWindow(QWidget):
         # Make sure you show() the widget!
         self.show()
 
+    def clear_selected_path(self):
+        self.path_select_time = None
+        self.selected_path = ''
+        self.path_picker_lbl.setText('(No Folder Selected)')
+        self.target_paths = {}
+        self.cancel_folder_open = False
+
+    def show_conversion_task_stats(self):
+        self.path_picker_lbl.setText(
+            f'({len(self.target_paths):,}) images @ '
+            f'folder "{os.path.basename(self.selected_path)}"'
+        )
+
+    def set_folder_choose_cancel_flag(self):
+        # Set the cancel flag on the widget
+        self.cancel_folder_open = True
+
     def handle_choose_path(self):
         folder_path = QFileDialog.getExistingDirectory(self)
 
         # Validate path
         if folder_path:
-            self.path_picker_field.setText(folder_path)
-        else:
-            self.path_picker_field.clear()
+            # Don't proceed unless the path is valid
+            selected_path = os.path.abspath(folder_path)
+            if not os.path.exists:
+                self.show_error_message('Error: Folder does not exist!')
+                return
+            if not os.path.isdir(folder_path):
+                self.show_error_message('Error: Path is not a folder!')
+                return
+
+            # Clear current selection before proceeding with new path
+            self.clear_selected_path()
+            target_paths = self.target_paths
+            app = QApplication.instance()
+            self.cancel_folder_open = False
+
+            box = QMessageBox()
+            box.setStandardButtons(QMessageBox.Cancel)
+            box.setWindowTitle('Finding files...')
+            box.setText(f'(0) matches\n(0) searched...')
+            cancel_btn = box.button(QMessageBox.Cancel)
+            cancel_btn.clicked.connect(self.set_folder_choose_cancel_flag)
+            # box.resize(600, box.minimumSizeHint().height())  # TODO: Fix this
+            box.show()
+
+            # Conversion task info is populated here
+            self.path_select_time = datetime.datetime.now()
+            self.selected_path = selected_path
+
+            # Gather file info
+            files_searched = 0
+            for dirpath, dirnames, filenames in os.walk(selected_path):
+                files_searched += 1
+                if files_searched % 1000 == 0:
+                    box.setText(f'({len(target_paths):,}) matches\n({files_searched:,}) searched...')
+                    if self.cancel_folder_open:
+                        # Abort if needed
+                        self.clear_selected_path()
+                        return
+                    app.processEvents()
+
+                for fname in filenames:
+                    filepath = os.path.join(dirpath, fname)
+
+                    file_name, file_ext = os.path.splitext(filepath)
+                    extension_matched = None
+                    for ext_name, matcher in EXT_MATCHERS.items():
+                        if matcher.fullmatch(file_ext.strip('.')):
+                            extension_matched = matcher
+                            break
+
+                    if extension_matched:
+                        target_paths[filepath] = {}
+
+            self.show_conversion_task_stats()
 
     def show_error_message(self, message):
-        msg_dialog = QErrorMessage()
-        self._error_message = msg_dialog
-
-        msg_dialog.showMessage(message)
+        QMessageBox.information(
+            self,
+            'Error!',
+            'message'
+        )
 
     def get_extension_matcher(self, extension):
         if extension.lower() in {}:
