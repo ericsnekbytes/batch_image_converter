@@ -6,7 +6,9 @@ import os.path
 import random
 import re
 import sys
+import traceback
 
+from PIL import Image
 from PySide6.QtWidgets import QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox, QMessageBox, \
     QTableView, QHeaderView, QStyleFactory
 from PySide6.QtCore import Qt, Signal, QAbstractTableModel
@@ -29,6 +31,8 @@ EXT_MATCHERS = {
     EXT_WEBP: re.compile(r'webp', flags=re.IGNORECASE),
 }
 EXTENSIONS = set(EXT_MATCHERS)
+ERR_IMAGE_OPEN = 'ERR_IMAGE_OPEN'
+ERR_IMAGE_SAVE = 'ERR_IMAGE_SAVE'
 
 
 class ExtensionPicker(QWidget):
@@ -107,7 +111,7 @@ class TargetPathsModel(QAbstractTableModel):
         return len(self.model_data)
 
     def columnCount(self, parent):
-        return 2
+        return 3
 
     def data(self, index, role):
         # So, data() does a lot of different things. This
@@ -142,7 +146,8 @@ class TargetPathsModel(QAbstractTableModel):
                     return os.path.basename(list(self.model_data.items())[row][0])
                 if col == 1:
                     return list(self.model_data.items())[row][0]
-                return list(self.model_data.items())[row][col]
+                if col == 2:
+                    return str(list(self.model_data.items())[row][1])
 
         return None
 
@@ -160,6 +165,8 @@ class TargetPathsModel(QAbstractTableModel):
                     return "Filename"
                 if section == 1:
                     return "Path"
+                if section == 2:
+                    return "Extra Info"
 
     def set_new_data(self, user_data):
         # A custom function that clears the underlying data
@@ -181,6 +188,7 @@ class HomeWindow(QWidget):
         super().__init__()
         self.input_extension_filter = {key: True for key in EXTENSIONS}
         self.selected_path = ''  # The folder to convert
+        self.output_path = ''  # The destination folder
         self.path_select_time = None
         self.target_paths = {}
         self.cancel_folder_open = False
@@ -298,9 +306,26 @@ class HomeWindow(QWidget):
         output_controls = QHBoxLayout()
         output_settings_area.addLayout(output_controls)
         layout.addWidget(output_settings_box)
-        output_format_field = QLineEdit()
-        output_format_field.setPlaceholderText('Enter a format, ex: png, jpg')
-        self.output_format_field = output_format_field
+
+        # Add user controls for choosing a folder to convert
+        output_path_picker_header = QHBoxLayout()
+        layout.addLayout(output_path_picker_header)
+        output_path_picker_header.addWidget(QLabel('Destination Folder:'))
+        # ....
+        output_path_picker_lbl = QLabel()
+        output_path_picker_header.addWidget(output_path_picker_lbl)
+        self.output_path_picker_lbl = output_path_picker_lbl
+        output_path_picker_header.addStretch()
+        self.output_path_picker_header = output_path_picker_header
+        self.clear_output_path()
+        # ....
+        output_path_picker_controls = QHBoxLayout()
+        layout.addLayout(output_path_picker_controls)
+        output_path_picker_btn = QPushButton('Choose Folder')
+        output_path_picker_btn.clicked.connect(self.handle_choose_output_path)
+        output_path_picker_controls.addWidget(output_path_picker_btn)
+        output_path_picker_controls.addStretch()
+        self.output_path_picker_btn = output_path_picker_btn
 
         convert_controls = QHBoxLayout()
         convert_controls.addStretch()
@@ -326,6 +351,10 @@ class HomeWindow(QWidget):
         self.cancel_folder_open = False
         self.target_paths_model.set_new_data(self.target_paths)
 
+    def clear_output_path(self):
+        self.output_path = ''
+        self.output_path_picker_lbl.setText('(No Folder Selected)')
+
     def show_conversion_task_stats(self):
         self.path_picker_lbl.setText(
             f'({len(self.target_paths):,}) images @ '
@@ -335,6 +364,23 @@ class HomeWindow(QWidget):
     def set_folder_choose_cancel_flag(self):
         # Set the cancel flag on the widget
         self.cancel_folder_open = True
+
+    def handle_choose_output_path(self):
+        folder_path = QFileDialog.getExistingDirectory(self)
+
+        # Validate path
+        if folder_path:
+            # Don't proceed unless the path is valid
+            output_path = os.path.abspath(folder_path)
+            if not os.path.exists:
+                self.show_error_message('Error: Folder does not exist!')
+                return
+            if not os.path.isdir(folder_path):
+                self.show_error_message('Error: Path is not a folder!')
+                return
+
+            self.output_path = output_path
+            self.output_path_picker_lbl.setText(os.path.basename(output_path))
 
     def handle_choose_path(self):
         folder_path = QFileDialog.getExistingDirectory(self)
@@ -392,7 +438,7 @@ class HomeWindow(QWidget):
                             break
 
                     if extension_matched:
-                        target_paths[filepath] = {}
+                        target_paths[filepath] = {'errors': []}
 
             self.target_paths_model.set_new_data(target_paths)
             self.show_conversion_task_stats()
@@ -409,15 +455,90 @@ class HomeWindow(QWidget):
             return
 
     def handle_convert(self):
-        user_folder = self.path_picker_field.text()
-        if not os.path.isdir(user_folder):
-            self.path_picker_field.clear()
+        user_folder = self.selected_path
+        if not os.path.exists(user_folder) or not os.path.isdir(user_folder):
+            self.clear_selected_path()
+            self.show_error_message('Error: Folder does not exist!')
+
+            return
+        if not os.path.exists(self.output_path) or not os.path.isdir(self.output_path):
+            self.clear_selected_path()
             self.show_error_message('Error: Folder does not exist!')
 
             return
 
-        # user_extensions = [ext.strip() for ext in self.file_filter_field.text().split(',')]
-        # actual_extensions = [self.get_extension_matcher(user_ext) for user_ext in user_extensions]
+        for image_path, metadata in self.target_paths.items():
+            try:
+                user_image = Image.open(image_path)
+            except OSError as err:
+                metadata['errors'].append({ERR_IMAGE_OPEN: True})
+                traceback.print_exc()
+                print(f'[py_img_batcher] Error opening {image_path}, skipping...')
+
+                continue
+
+            for output_ext in [ext for ext, val in self.output_extension_filter.items() if val]:
+                try:
+                    output_path = self.get_safe_output_path(image_path, output_ext)
+                    print('OUTPUT')
+                    print(output_path)
+                    user_image.save(output_path)
+                except OSError:
+                    metadata['errors'].append({ERR_IMAGE_SAVE: output_path})
+                    traceback.print_exc()
+                    print(f'[py_img_batcher] Error saving {image_path}, skipping...')
+
+                    continue
+                except Exception as err:
+                    metadata['errors'].append({'unknown error': True})
+                    traceback.print_exc()
+                    print(f'[py_img_batcher] Unknown error for {output_path}, skipping...')
+
+                    continue
+
+        print(f'Finished with {sum([len(val["errors"]) for item, val in self.target_paths.items()])} errors')
+
+    def get_safe_output_path(self, src_path, extension):
+        base_name = os.path.basename(os.path.splitext(src_path)[0])
+
+        name_counter = 0
+        num_postfix_group = 1
+        cur_item_name = os.path.join(self.output_path, base_name)
+        num_format = '.{0:0>3}'
+        keep_naming = True
+        start_time = datetime.datetime.now()
+        while keep_naming:
+            name_counter += 1
+            # cur_item_name = base_name + num_format.format(str(name_counter))
+            cur_item_name = os.path.join(self.output_path, base_name + num_format.format(str(name_counter)))
+            if num_postfix_group > 16:
+                raise Exception('Cannot add, unique name error.')
+            if name_counter == 999:
+                name_counter = 0
+                base_name += num_format.format('1')
+                num_postfix_group += 1
+
+            if not (os.path.exists(cur_item_name)):
+                cur_item_name = base_name
+                keep_naming = False
+                continue
+
+            if not (os.path.exists(os.path.join(self.output_path, base_name + '.' + extension))):
+                cur_item_name = base_name
+                keep_naming = False
+                continue
+            elif (os.path.exists(os.path.join(self.output_path, base_name + num_format.format(str(name_counter)) + '.' + extension))):
+                continue
+            else:
+                keep_naming = False
+                continue
+
+        name = os.path.join(self.output_path, cur_item_name + '.' + extension)
+
+        print('SAFENAME')
+        print(name)
+
+        return name
 
     def update_input_ext_filter_summary(self):
         self.input_filter_summary.setText(','.join(sorted([ext for ext, state in self.input_extension_filter.items() if state])))
