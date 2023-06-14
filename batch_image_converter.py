@@ -501,44 +501,18 @@ class HomeWindow(QWidget):
     def get_safe_output_path(self, src_path, extension):
         base_name = os.path.basename(os.path.splitext(src_path)[0])
 
-        name_counter = 0
-        num_postfix_group = 1
-        cur_item_name = os.path.join(self.output_path, base_name)
-        num_format = '.{0:0>3}'
-        keep_naming = True
-        start_time = datetime.datetime.now()
-        while keep_naming:
-            name_counter += 1
-            # cur_item_name = base_name + num_format.format(str(name_counter))
-            cur_item_name = os.path.join(self.output_path, base_name + num_format.format(str(name_counter)))
-            if num_postfix_group > 16:
-                raise Exception('Cannot add, unique name error.')
-            if name_counter == 999:
-                name_counter = 0
-                base_name += num_format.format('1')
-                num_postfix_group += 1
+        name_attempt_counter = -1
+        current_name = os.path.join(self.output_path, f'{base_name}.{extension}')
 
-            if not (os.path.exists(cur_item_name)):
-                cur_item_name = base_name
-                keep_naming = False
-                continue
+        while os.path.exists(current_name):
+            print(f'File {current_name} already exists, attempting new name...')
+            name_attempt_counter += 1
+            current_name = os.path.join(self.output_path, f'{base_name}.{name_attempt_counter:0>4}.{extension}')
 
-            if not (os.path.exists(os.path.join(self.output_path, base_name + '.' + extension))):
-                cur_item_name = base_name
-                keep_naming = False
-                continue
-            elif (os.path.exists(os.path.join(self.output_path, base_name + num_format.format(str(name_counter)) + '.' + extension))):
-                continue
-            else:
-                keep_naming = False
-                continue
+            if name_attempt_counter == 10000:
+                raise Exception('Error obtaining non-duplicate name')
 
-        name = os.path.join(self.output_path, cur_item_name + '.' + extension)
-
-        print('SAFENAME')
-        print(name)
-
-        return name
+        return current_name
 
     def update_input_ext_filter_summary(self):
         self.input_filter_summary.setText(','.join(sorted([ext for ext, state in self.input_extension_filter.items() if state])))
