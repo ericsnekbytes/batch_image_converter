@@ -7,19 +7,26 @@ import random
 import re
 import sys
 
-from PySide6.QtWidgets import QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox, QMessageBox
+from PySide6.QtWidgets import QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox, QMessageBox, \
+    QTableView, QHeaderView, QStyleFactory
 from PySide6.QtCore import Qt, Signal, QAbstractTableModel
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, QPushButton,
                                QHBoxLayout)
 
 
+EXT_BMP = 'bmp'
+EXT_GIF = 'gif'
+EXT_JPG = 'jpg'
+EXT_PNG = 'png'
+EXT_TIFF = 'tiff'
+EXT_WEBP = 'webp'
 EXT_MATCHERS = {
-    'bmp': re.compile(r'bmp', flags=re.IGNORECASE),
-    'gif': re.compile(r'gif', flags=re.IGNORECASE),
-    'jpg': re.compile(r'(jpg|jpeg)', flags=re.IGNORECASE),
-    'png': re.compile(r'png', flags=re.IGNORECASE),
-    'tiff': re.compile(r'(tif|tiff)', flags=re.IGNORECASE),
-    'webp': re.compile(r'webp', flags=re.IGNORECASE),
+    EXT_BMP: re.compile(r'bmp', flags=re.IGNORECASE),
+    EXT_GIF: re.compile(r'gif', flags=re.IGNORECASE),
+    EXT_JPG: re.compile(r'(jpg|jpeg)', flags=re.IGNORECASE),
+    EXT_PNG: re.compile(r'png', flags=re.IGNORECASE),
+    EXT_TIFF: re.compile(r'(tif|tiff)', flags=re.IGNORECASE),
+    EXT_WEBP: re.compile(r'webp', flags=re.IGNORECASE),
 }
 EXTENSIONS = set(EXT_MATCHERS)
 
@@ -80,19 +87,114 @@ class ExtensionPicker(QWidget):
         self.hide()
 
 
+class TargetPathsModel(QAbstractTableModel):
+    """Tells Qt how our data corresponds to different rows/columns/cells.
+
+    From the Qt documentation (for display-only tables):
+      When subclassing QAbstractTableModel, you must implement rowCount(),
+      columnCount(), and data(). Default implementations of the index()
+      and parent() functions are provided by QAbstractTableModel.
+      Well behaved models will also implement headerData().
+    """
+
+    def __init__(self, user_data):
+        super().__init__()
+
+        # Store the data we're representing
+        self.model_data = user_data
+
+    def rowCount(self, parent):
+        return len(self.model_data)
+
+    def columnCount(self, parent):
+        return 2
+
+    def data(self, index, role):
+        # So, data() does a lot of different things. This
+        # function takes in a QModelIndex (which tells you
+        # which cell/what data Qt needs info about), then
+        # you respond by returning whatever KIND of information
+        # Qt is looking for, determined by the role. Here are
+        # the builtin roles Qt requests by default:
+        #
+        #   0) Qt::DisplayRole, 1) Qt::DecorationRole,
+        #   2) Qt::EditRole 3) Qt::ToolTipRole, 4) Qt::StatusTipRole
+        #   5) Qt::WhatsThisRole, 6) Qt::SizeHintRole
+        #
+        # Most of these you can probably ignore. Often, you
+        # only need to provide data for the DisplayRole, which
+        # will often just be some text representing your data...
+        # but as you can see, for each cell, Qt also might want
+        # to know how to size the data in that cell, or what
+        # a good tooltip might be for the cell, etcetera. Make
+        # SURE you specifically test for the roles that you care
+        # about, and return None if the role isn't relevant to you.
+        # Providing bad data/a nonsense return value for a role
+        # you don't care about can make weird things happen.
+        row = index.row()
+        col = index.column()
+
+        # Note that dicts are sorted in Py3.7+, so here
+        # we just index an ordered list of our dict items
+        if index.isValid():
+            if role == Qt.DisplayRole:
+                if col == 0:
+                    return os.path.basename(list(self.model_data.items())[row][0])
+                if col == 1:
+                    return list(self.model_data.items())[row][0]
+                return list(self.model_data.items())[row][col]
+
+        return None
+
+    def headerData(self, section, orientation, role):
+        # This is where you can name your columns, or show
+        # some other data for the column and row headers
+        if role == Qt.DisplayRole:
+            # Just return a row number for the vertical header
+            if orientation == Qt.Vertical:
+                return str(section)
+
+            # Return some column names for the horizontal header
+            if orientation == Qt.Horizontal:
+                if section == 0:
+                    return "Filename"
+                if section == 1:
+                    return "Path"
+
+    def set_new_data(self, user_data):
+        # A custom function that clears the underlying data
+        # (and stores new data), then refreshes the model
+
+        # Assign new underlying data
+        self.model_data = user_data
+
+        # This tells Qt to invalidate the model, which will cause
+        # connected views to refresh/re-query any displayed data
+        self.beginResetModel()
+        self.endResetModel()
+
+
 class HomeWindow(QWidget):
     """Batch image converter home widget"""
 
     def __init__(self):
         super().__init__()
-        self.filter_extensions = {key: True for key in EXTENSIONS}
+        self.input_extension_filter = {key: True for key in EXTENSIONS}
         self.selected_path = ''  # The folder to convert
         self.path_select_time = None
         self.target_paths = {}
         self.cancel_folder_open = False
+        self.output_extension_filter = {key: False for key in EXTENSIONS}
+        self.output_extension_filter[EXT_JPG] = True  # Default to JPG export
 
-        self.ext_picker_modal = ExtensionPicker(self.filter_extensions)
-        self.ext_picker_modal.request_extension_updated.connect(self.handle_extension_selection_updated)
+        self.input_ext_picker_modal = ExtensionPicker(self.input_extension_filter)
+        self.input_ext_picker_modal.request_extension_updated.connect(self.handle_input_extensions_updated)
+
+        self.output_ext_picker_modal = ExtensionPicker(self.output_extension_filter)
+        self.output_ext_picker_modal.request_extension_updated.connect(self.handle_output_extensions_updated)
+
+        target_paths_model = TargetPathsModel(self.target_paths)
+        self.target_paths_model = target_paths_model
 
         # Set some initial properties
         layout = QVBoxLayout()
@@ -118,6 +220,20 @@ class HomeWindow(QWidget):
         path_picker_controls.addStretch()
         self.path_picker_btn = path_picker_btn
 
+        targets_table = QTableView()
+        targets_table.setModel(target_paths_model)
+        targets_table.setWordWrap(False)
+        # Set header behaviors
+        # ....................
+        # Make the last column fit the parent layout width
+        horiz_header = targets_table.horizontalHeader()
+        horiz_header.setStretchLastSection(True)
+        vert_header = targets_table.verticalHeader()
+        vert_header.setSectionResizeMode(QHeaderView.Fixed)
+        # ..........................
+        layout.addWidget(targets_table)
+        self.targets_table = targets_table
+
         # Add a settings area
         settings_area = QVBoxLayout()
         settings_box = QGroupBox('Conversion Settings:')
@@ -132,18 +248,18 @@ class HomeWindow(QWidget):
         filter_controls = QHBoxLayout()
         filter_controls.addWidget(QLabel('Selected Filetypes:'))
         settings_area.addLayout(filter_controls)
-        filter_summary = QLabel()
-        self.filter_summary = filter_summary
-        filter_controls.addWidget(filter_summary)
+        input_filter_summary = QLabel()
+        self.input_filter_summary = input_filter_summary
+        filter_controls.addWidget(input_filter_summary)
         filter_controls.addStretch()
-        self.update_filter_summary()  # Shows users which extensions are selected
-        ext_picker_area = QHBoxLayout()
-        settings_area.addLayout(ext_picker_area)
-        extension_picker_btn = QPushButton('Pick Filetypes')
-        extension_picker_btn.clicked.connect(self.handle_ext_picker_clicked)
-        ext_picker_area.addWidget(extension_picker_btn)
-        ext_picker_area.addStretch()
-        self.extension_picker_btn = extension_picker_btn
+        self.update_input_ext_filter_summary()  # Shows users which extensions are selected
+        input_ext_picker_area = QHBoxLayout()
+        settings_area.addLayout(input_ext_picker_area)
+        input_extension_picker_btn = QPushButton('Pick Filetypes')
+        input_extension_picker_btn.clicked.connect(self.handle_input_ext_picker_clicked)
+        input_ext_picker_area.addWidget(input_extension_picker_btn)
+        input_ext_picker_area.addStretch()
+        self.extension_picker_btn = input_extension_picker_btn
         # ....
         scale_factor_controls = QHBoxLayout()
         settings_area.addLayout(scale_factor_controls)
@@ -162,9 +278,22 @@ class HomeWindow(QWidget):
         settings_area.addWidget(scale_factor)
         self.scale_factor = scale_factor
 
-        output_settings_box = QGroupBox('Output Settings:')
+        output_settings_box = QGroupBox('File Save Settings:')
         output_settings_area = QVBoxLayout()
-        output_settings_area.addWidget(QLabel('TODO'))
+        output_ext_picker_header = QHBoxLayout()
+        output_settings_area.addLayout(output_ext_picker_header)
+        output_ext_picker_header.addWidget(QLabel('Output Filetype(s):'))
+        output_filter_summary = QLabel()
+        output_ext_picker_header.addWidget(output_filter_summary)
+        output_ext_picker_header.addStretch()
+        self.output_filter_summary = output_filter_summary
+        self.update_output_ext_filter_summary()
+        output_ext_picker_area = QHBoxLayout()
+        output_ext_picker_btn = QPushButton('Pick Filetypes')
+        output_ext_picker_btn.clicked.connect(self.handle_output_ext_picker_clicked)
+        output_settings_area.addLayout(output_ext_picker_area)
+        output_ext_picker_area.addWidget(output_ext_picker_btn)
+        output_ext_picker_area.addStretch()
         output_settings_box.setLayout(output_settings_area)
         output_controls = QHBoxLayout()
         output_settings_area.addLayout(output_controls)
@@ -183,7 +312,9 @@ class HomeWindow(QWidget):
         self.convert_btn = convert_btn
 
         # Size the widget after adding stuff to the layout
-        self.resize(600, self.minimumSizeHint().height())  # Resize children (if needed) below this line
+        self.resize(800, 600)  # Resize children (if needed) below this line
+        targets_table.setColumnWidth(0, targets_table.width() / 2)
+        targets_table.setColumnWidth(1, targets_table.width() / 2)
         # Make sure you show() the widget!
         self.show()
 
@@ -193,6 +324,7 @@ class HomeWindow(QWidget):
         self.path_picker_lbl.setText('(No Folder Selected)')
         self.target_paths = {}
         self.cancel_folder_open = False
+        self.target_paths_model.set_new_data(self.target_paths)
 
     def show_conversion_task_stats(self):
         self.path_picker_lbl.setText(
@@ -262,6 +394,7 @@ class HomeWindow(QWidget):
                     if extension_matched:
                         target_paths[filepath] = {}
 
+            self.target_paths_model.set_new_data(target_paths)
             self.show_conversion_task_stats()
 
     def show_error_message(self, message):
@@ -286,16 +419,27 @@ class HomeWindow(QWidget):
         # user_extensions = [ext.strip() for ext in self.file_filter_field.text().split(',')]
         # actual_extensions = [self.get_extension_matcher(user_ext) for user_ext in user_extensions]
 
-    def update_filter_summary(self):
-        self.filter_summary.setText(','.join(sorted([ext for ext, state in self.filter_extensions.items() if state])))
+    def update_input_ext_filter_summary(self):
+        self.input_filter_summary.setText(','.join(sorted([ext for ext, state in self.input_extension_filter.items() if state])))
 
-    def handle_extension_selection_updated(self, ext_name, check_state):
-        self.filter_extensions[ext_name] = check_state
-        self.update_filter_summary()
+    def update_output_ext_filter_summary(self):
+        self.output_filter_summary.setText(','.join(sorted([ext for ext, state in self.output_extension_filter.items() if state])))
 
-    def handle_ext_picker_clicked(self):
-        self.ext_picker_modal.set_check_states(self.filter_extensions)
-        self.ext_picker_modal.show()
+    def handle_input_extensions_updated(self, ext_name, check_state):
+        self.input_extension_filter[ext_name] = check_state
+        self.update_input_ext_filter_summary()
+
+    def handle_output_extensions_updated(self, ext_name, check_state):
+        self.output_extension_filter[ext_name] = check_state
+        self.update_output_ext_filter_summary()
+
+    def handle_input_ext_picker_clicked(self):
+        self.input_ext_picker_modal.set_check_states(self.input_extension_filter)
+        self.input_ext_picker_modal.show()
+
+    def handle_output_ext_picker_clicked(self):
+        self.output_ext_picker_modal.set_check_states(self.output_extension_filter)
+        self.output_ext_picker_modal.show()
 
     def handle_scale_slider_changed(self, value):
         self.scale_factor_summary.setText(f'({value})')
