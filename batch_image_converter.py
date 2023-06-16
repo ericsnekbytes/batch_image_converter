@@ -636,12 +636,12 @@ class HomeWindow(QWidget):
         box.resize(400, box.minimumSizeHint().height())  # TODO: Fix this
         self.file_search_progress_modal = box
         box.show()
+        # TODO handle popup close
 
         app.processEvents()
 
         # Start searching the disk for images at the specified location
         result = manager.start_file_search()
-        # print(f'[batch_img_converter] {len(result["matches"])} matched, {len(result["errors"])} files with errors')  # TODO add total filecount
         if result['canceled']:
             box.set_message('Image search was canceled')
         else:
