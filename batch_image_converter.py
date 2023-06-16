@@ -265,7 +265,11 @@ class ConversionManager(QObject):
                     if self.cancel_folder_open_flag:
                         # Abort if needed
                         self.clear_source_path()  # TODO be consistent when clearing
-                        return
+                        return {
+                            'matches': target_paths,
+                            'errors': [],
+                            'canceled': True,
+                        }
 
             for fname in filenames:
                 filepath = os.path.join(dirpath, fname)
@@ -648,8 +652,8 @@ class HomeWindow(QWidget):
             box.set_message(
                 f'Finished with {len(result["matches"])} images found, {len(result["errors"])} files with errors'
             )  # TODO add total filecount
-            box.disable_button(QDialogButtonBox.Cancel)
-            box.enable_button(QDialogButtonBox.Ok)
+        box.disable_button(QDialogButtonBox.Cancel)
+        box.enable_button(QDialogButtonBox.Ok)
 
         # TODO restructure/simplify this
         self.target_paths_model.set_new_data(manager.get_target_paths())
