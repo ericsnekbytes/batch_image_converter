@@ -10,7 +10,7 @@ import traceback
 
 from PIL import Image
 from PySide6.QtWidgets import QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox, QMessageBox, \
-    QTableView, QHeaderView, QStyleFactory
+    QTableView, QHeaderView, QStyleFactory, QDialog, QDialogButtonBox
 from PySide6.QtCore import Qt, Signal, QAbstractTableModel, QObject
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, QPushButton,
                                QHBoxLayout)
@@ -256,15 +256,12 @@ class ConversionManager(QObject):
             files_searched += 1
 
             # Check intermittently for UI updates and for cancellation requests
-            if files_searched % 256 == 0:
-                print('UPDATE PROG')
+            if files_searched % 100 == 0 or files_searched == 1:
                 current_time = datetime.datetime.now()
-                if (current_time - delta_timestamp).seconds > .5:
-                    print('UPDATE PROG')
+                if (current_time - delta_timestamp).seconds > .2:
                     delta_timestamp = current_time
 
                     self.file_search_progress.emit(len(self.target_paths), files_searched)
-                    # box.setText(f'({len(target_paths):,}) matches\n({files_searched:,}) searched...')
                     if self.cancel_folder_open_flag:
                         # Abort if needed
                         self.clear_source_path()  # TODO be consistent when clearing
@@ -272,8 +269,6 @@ class ConversionManager(QObject):
 
             for fname in filenames:
                 filepath = os.path.join(dirpath, fname)
-                print('SEARCHFILE')
-                print(filepath)
 
                 file_name, file_ext = os.path.splitext(filepath)
                 extension_matched = None
@@ -285,7 +280,11 @@ class ConversionManager(QObject):
                 if extension_matched:
                     target_paths[filepath] = {'errors': []}  # Add a metadata dict for this file
 
-        return {'matches': target_paths, 'errors': [key for key, val in target_paths.items() if val['errors']]}
+        return {
+            'matches': target_paths,
+            'errors': [key for key, val in target_paths.items() if val['errors']],
+            'canceled': self.cancel_folder_open_flag,
+        }
 
     def clear_source_path(self):
         self.conv_timestamp = None
@@ -320,6 +319,58 @@ class WizardPickFiles(QWidget):
 
     def __init__(self):
         super().__init__()
+
+
+class CustomModal(QWidget):
+
+    def __init__(self, user_title='', user_message='', user_buttons=None):
+        super().__init__()
+
+        button_objects = {}
+        self.button_objects = button_objects
+
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        self.setWindowModality(Qt.ApplicationModal)
+        self.setWindowTitle(user_title)
+
+        message = QLabel()
+        message.setText(user_message)
+        layout.addWidget(message)
+        self.message = message
+
+        button_box = QDialogButtonBox()
+        layout.addWidget(button_box)
+        self.button_box = button_box
+
+        if user_buttons is not None:
+            self.set_buttons(user_buttons)
+
+    def set_message(self, user_message):
+        self.message.setText(user_message)
+
+    def set_title(self, title):
+        self.setWindowTitle(title)
+
+    def set_buttons(self, std_buttons):
+        button_objects = self.button_objects
+        for btn in std_buttons:
+            button_obj = self.button_box.addButton(btn)
+            button_objects[btn] = button_obj
+
+        return button_objects
+
+    def button(self, std_button):
+        return self.button_box.button(std_button)
+
+    def enable_button(self, std_button):
+        # TODO: cleanup/combine to set state
+        btn = self.button_box.button(std_button)
+        btn.setEnabled(True)
+
+    def disable_button(self, std_button):
+        btn = self.button_box.button(std_button)
+        btn.setEnabled(False)
 
 
 class HomeWindow(QWidget):
@@ -514,6 +565,7 @@ class HomeWindow(QWidget):
 
     def set_folder_choose_cancel_flag(self):
         # Set the cancel flag on the widget
+        self.file_search_progress_modal.disable_button(QDialogButtonBox.Cancel)
         self.conversion_mgr.request_cancel_folder_open()
 
     # TODO move this down
@@ -541,10 +593,12 @@ class HomeWindow(QWidget):
 
     def handle_file_search_progress(self, match_count, search_count):
         """Handle intermittent file search progress updates, refresh the UI"""
-        print('FOOBARxx7')
         popup = self.file_search_progress_modal
-        popup.setText(f'({match_count:,}) matches\n({search_count:,}) searched...')
+        popup.set_message(f'({match_count:,}) matches\n({search_count:,}) searched...')
         QApplication.instance().processEvents()
+
+    def handle_progress_popup_ok(self):
+        self.file_search_progress_modal.close()
 
     def handle_choose_source_path(self):
         manager = self.conversion_mgr
@@ -571,21 +625,31 @@ class HomeWindow(QWidget):
         app = QApplication.instance()
 
         # Show a progress popup
-        box = QMessageBox()
-        box.setStandardButtons(QMessageBox.Cancel)
-        box.setWindowTitle('Finding files...')
-        box.setText(f'(0) matches\n(0) searched...')
-        cancel_btn = box.button(QMessageBox.Cancel)
+        box = CustomModal('Finding files...', f'(0) matches\n(0) searched...')
+        box.set_buttons([QDialogButtonBox.Cancel, QDialogButtonBox.Ok])
+        # ....
+        cancel_btn = box.button(QDialogButtonBox.Cancel)
         cancel_btn.clicked.connect(self.set_folder_choose_cancel_flag)
-        # box.resize(600, box.minimumSizeHint().height())  # TODO: Fix this
+        ok_btn = box.button(QDialogButtonBox.Ok)
+        ok_btn.clicked.connect(self.handle_progress_popup_ok)
+        box.disable_button(QDialogButtonBox.Ok)
+        box.resize(400, box.minimumSizeHint().height())  # TODO: Fix this
         self.file_search_progress_modal = box
         box.show()
 
+        app.processEvents()
+
         # Start searching the disk for images at the specified location
         result = manager.start_file_search()
-        box.close()
-        print(f'[batch_img_converter] {len(result["matches"])} matched, {len(result["errors"])} files with errors')  # TODO add total filecount
-        # print(matches)
+        # print(f'[batch_img_converter] {len(result["matches"])} matched, {len(result["errors"])} files with errors')  # TODO add total filecount
+        if result['canceled']:
+            box.set_message('Image search was canceled')
+        else:
+            box.set_message(
+                f'Finished with {len(result["matches"])} images found, {len(result["errors"])} files with errors'
+            )  # TODO add total filecount
+            box.disable_button(QDialogButtonBox.Cancel)
+            box.enable_button(QDialogButtonBox.Ok)
 
         # TODO restructure/simplify this
         self.target_paths_model.set_new_data(manager.get_target_paths())
