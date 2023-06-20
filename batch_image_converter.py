@@ -394,6 +394,7 @@ class HomeWindow(QWidget):
         self.setLayout(layout)
 
         # Hold child modal widgets here
+        self.error_modal = None
         self.input_ext_picker_modal = ExtensionPicker(conversion_mgr.get_file_search_filters())
         self.input_ext_picker_modal.request_extension_updated.connect(self.handle_input_extensions_updated)
         self.output_ext_picker_modal = ExtensionPicker(conversion_mgr.get_file_save_filters())
@@ -660,11 +661,17 @@ class HomeWindow(QWidget):
         self.show_conversion_task_stats()
 
     def show_error_message(self, message):
-        QMessageBox.information(
-            self,
-            'Error!',
-            'message'
-        )
+        # Show a message popup (has an okay button only)
+        box = CustomModal('Error!', message, [QDialogButtonBox.Ok])
+
+        # Ok button should close the modal
+        ok_btn = box.button(QDialogButtonBox.Ok)
+        ok_btn.clicked.connect(box.close)
+
+        # Size and hold a reference to the window
+        box.resize(400, box.minimumSizeHint().height())
+        self.file_search_progress_modal = box
+        box.show()
 
     def get_extension_matcher(self, extension):
         if extension.lower() in {}:
