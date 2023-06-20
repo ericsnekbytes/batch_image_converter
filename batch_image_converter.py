@@ -669,7 +669,7 @@ class HomeWindow(QWidget):
         ok_btn.clicked.connect(box.close)
 
         # Size and hold a reference to the window
-        box.resize(400, box.minimumSizeHint().height())
+        box.resize(300, box.minimumSizeHint().height())
         self.file_search_progress_modal = box
         box.show()
 
