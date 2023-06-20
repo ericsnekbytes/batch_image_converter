@@ -10,7 +10,7 @@ import traceback
 
 from PIL import Image
 from PySide6.QtWidgets import QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox, QMessageBox, \
-    QTableView, QHeaderView, QStyleFactory, QDialog, QDialogButtonBox
+    QTableView, QHeaderView, QStyleFactory, QDialog, QDialogButtonBox, QFrame
 from PySide6.QtCore import Qt, Signal, QAbstractTableModel, QObject
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, QPushButton,
                                QHBoxLayout)
@@ -37,6 +37,13 @@ STATUS_OK = 0
 ERR_FOLDER_INVALID = 1
 ERR_FOLDER_DOES_NOT_EXIST = 1 << 1
 ERR_PATH_IS_NOT_FOLDER = 1 << 2
+# Move this to models module
+_TARGET_PATHS_MODEL = None
+def get_target_paths_model():
+    global _TARGET_PATHS_MODEL
+    if _TARGET_PATHS_MODEL is None:
+        _TARGET_PATHS_MODEL = TargetPathsModel()
+    return _TARGET_PATHS_MODEL
 
 
 class ImageBatcherException(Exception):
@@ -113,11 +120,14 @@ class TargetPathsModel(QAbstractTableModel):
       Well behaved models will also implement headerData().
     """
 
-    def __init__(self, user_data):
+    def __init__(self, user_data=None):
         super().__init__()
 
         # Store the data we're representing
-        self.model_data = user_data
+        if user_data is not None:
+            self.model_data = user_data
+        else:
+            self.model_data = {}
 
     def rowCount(self, parent):
         return len(self.model_data)
@@ -319,10 +329,197 @@ class ConversionManager(QObject):
             return ERR_FOLDER_INVALID
 
 
-class WizardPickFiles(QWidget):
+class Wizard1PickFiles(QWidget):
+
+    request_next_step = Signal()
 
     def __init__(self):
         super().__init__()
+
+        self.setWindowTitle('Batch Image Converter: Step 1')
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        step_nav_box = QGroupBox()
+        step_navigation_area = QHBoxLayout()
+        step_nav_box.setLayout(step_navigation_area)
+        layout.addWidget(step_nav_box)
+
+        # step_nav_divider = QFrame()
+        # step_nav_divider.setFrameShadow(QFrame.Raised)
+        # step_nav_divider.setFrameShape(QFrame.HLine)
+        # step_nav_divider.setMidLineWidth(.5)
+        # layout.addWidget(step_nav_divider)
+
+        next_btn = QPushButton('Next')
+        next_btn.clicked.connect(self.handle_next_clicked)
+        self.next_btn = next_btn
+
+        step_navigation_area.addSpacing(next_btn.sizeHint().width())
+        step_navigation_area.addStretch()
+        step_navigation_area.addWidget(QLabel('Step 1: Choose Folder'))
+        step_navigation_area.addStretch()
+
+        step_navigation_area.addWidget(next_btn)
+
+        task_area = QVBoxLayout()
+        layout.addLayout(task_area)
+        self.task_area = task_area
+
+        # Add user controls for choosing a folder to convert
+        src_folder_header = QHBoxLayout()
+        task_area.addLayout(src_folder_header)
+        src_folder_header.addWidget(QLabel('Select a folder with some images'))
+        src_folder_lbl = QLabel()
+        src_folder_header.addWidget(src_folder_lbl)
+        self.src_folder_lbl = src_folder_lbl
+        # self.clear_selected_path()  # TODO Fix/refactor
+        # ....
+        src_folder_controls = QHBoxLayout()
+        task_area.addLayout(src_folder_controls)
+        # ....
+        pick_src_folder_btn = QPushButton('Pick Folder')
+        # pick_src_folder_btn.clicked.connect(self.handle_choose_source_path)
+        src_folder_controls.addWidget(pick_src_folder_btn)
+        src_folder_controls.addStretch()
+        self.pick_src_folder_btn = pick_src_folder_btn
+
+        # Set up the files table
+        targets_view = QTableView()
+        targets_view.setModel(get_target_paths_model())
+        targets_view.setWordWrap(False)
+        # Set header behaviors
+        # ....
+        # Make the last column fit the parent layout width
+        horiz_header = targets_view.horizontalHeader()
+        horiz_header.setStretchLastSection(True)
+        # Make the rows fixed-height
+        vert_header = targets_view.verticalHeader()
+        vert_header.setSectionResizeMode(QHeaderView.Fixed)
+        # ....
+        layout.addWidget(targets_view)
+        self.targets_view = targets_view
+
+        # Size the widget after adding stuff to the layout
+        self.resize(800, 600)  # Resize children (if needed) below this line
+        targets_view.setColumnWidth(0, targets_view.width() / 2)
+        targets_view.setColumnWidth(1, targets_view.width() / 2)
+        # Auto show() the widget!
+        self.show()
+
+    def handle_next_clicked(self):
+        self.hide()
+        self.request_next_step.emit()
+
+
+class Wizard2ConversionSettings(QWidget):
+
+    request_last_step = Signal()
+    request_next_step = Signal()
+
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle('Batch Image Converter: Step 2')
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        step_nav_box = QGroupBox()
+        step_navigation_area = QHBoxLayout()
+        step_nav_box.setLayout(step_navigation_area)
+        layout.addWidget(step_nav_box)
+
+        # step_nav_divider = QFrame()
+        # step_nav_divider.setFrameShadow(QFrame.Raised)
+        # step_nav_divider.setFrameShape(QFrame.HLine)
+        # step_nav_divider.setMidLineWidth(.5)
+        # layout.addWidget(step_nav_divider)
+
+        back_btn = QPushButton('Back')
+        back_btn.clicked.connect(self.handle_back_clicked)
+        step_navigation_area.addWidget(back_btn)
+        self.back_btn = back_btn
+
+        step_navigation_area.addStretch()
+        step_navigation_area.addWidget(QLabel('Step 2: (Optional) Image Modifications'))
+        step_navigation_area.addStretch()
+
+        next_btn = QPushButton('Next')
+        next_btn.clicked.connect(self.handle_next_clicked)
+        step_navigation_area.addWidget(next_btn)
+        self.next_btn = next_btn
+
+        task_area = QVBoxLayout()
+        layout.addLayout(task_area)
+        self.task_area = task_area
+
+        task_area.addWidget(QTextEdit())
+
+        # Size the widget after adding stuff to the layout
+        self.resize(800, 600)  # Resize children (if needed) below this line
+
+    def handle_back_clicked(self):
+        self.hide()
+        self.request_last_step.emit()
+
+    def handle_next_clicked(self):
+        self.hide()
+        self.request_next_step.emit()
+
+
+class Wizard3SaveSettings(QWidget):
+
+    request_last_step = Signal()
+    request_next_step = Signal()
+
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle('Batch Image Converter: Step 3')
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        step_nav_box = QGroupBox()
+        step_navigation_area = QHBoxLayout()
+        step_nav_box.setLayout(step_navigation_area)
+        layout.addWidget(step_nav_box)
+
+        # step_nav_divider = QFrame()
+        # step_nav_divider.setFrameShadow(QFrame.Raised)
+        # step_nav_divider.setFrameShape(QFrame.HLine)
+        # step_nav_divider.setMidLineWidth(.5)
+        # layout.addWidget(step_nav_divider)
+
+        back_btn = QPushButton('Back')
+        back_btn.clicked.connect(self.handle_back_clicked)
+        step_navigation_area.addWidget(back_btn)
+        self.back_btn = back_btn
+
+        step_navigation_area.addStretch()
+        step_navigation_area.addWidget(QLabel('Step 3: Save Settings'))
+        step_navigation_area.addStretch()
+
+        next_btn = QPushButton('Next')
+        next_btn.clicked.connect(self.handle_next_clicked)
+        step_navigation_area.addWidget(next_btn)
+        self.next_btn = next_btn
+
+        task_area = QVBoxLayout()
+        layout.addLayout(task_area)
+        self.task_area = task_area
+
+        task_area.addWidget(QTextEdit())
+
+        # Size the widget after adding stuff to the layout
+        self.resize(800, 600)  # Resize children (if needed) below this line
+
+    def handle_back_clicked(self):
+        self.hide()
+        self.request_last_step.emit()
+
+    def handle_next_clicked(self):
+        self.hide()
+        self.request_next_step.emit()
 
 
 class CustomModal(QWidget):
@@ -377,8 +574,10 @@ class CustomModal(QWidget):
         btn.setEnabled(False)
 
 
-class HomeWindow(QWidget):
+class HomeWindow(QWidget):  # TODO renaming/step4
     """Batch image converter home widget"""
+
+    request_last_step = Signal()
 
     def __init__(self):
         super().__init__()
@@ -390,8 +589,29 @@ class HomeWindow(QWidget):
 
         # Set some initial widget properties
         layout = QVBoxLayout()
-        self.setWindowTitle('Batch image converter')
+        self.setWindowTitle('Batch image converter: Summary/Launch')
         self.setLayout(layout)
+
+        step_nav_box = QGroupBox()
+        step_navigation_area = QHBoxLayout()
+        step_nav_box.setLayout(step_navigation_area)
+        layout.addWidget(step_nav_box)
+
+        # step_nav_divider = QFrame()
+        # step_nav_divider.setFrameShadow(QFrame.Raised)
+        # step_nav_divider.setFrameShape(QFrame.HLine)
+        # step_nav_divider.setMidLineWidth(.5)
+        # layout.addWidget(step_nav_divider)
+
+        back_btn = QPushButton('Back')
+        back_btn.clicked.connect(self.handle_back_clicked)
+        step_navigation_area.addWidget(back_btn)
+        self.back_btn = back_btn
+
+        step_navigation_area.addStretch()
+        step_navigation_area.addWidget(QLabel('Summary/Launch Screen'))
+        step_navigation_area.addStretch()
+        step_navigation_area.addSpacing(back_btn.sizeHint().width())
 
         # Hold child modal widgets here
         self.error_modal = None
@@ -402,7 +622,8 @@ class HomeWindow(QWidget):
         self.file_search_progress_modal = None
 
         # Store the MVC model for the discovered files the users wants to convert
-        target_paths_model = TargetPathsModel(conversion_mgr.get_target_paths())
+        target_paths_model = get_target_paths_model()  # TODO Fix/refactor/move/finish
+        target_paths_model.set_new_data(conversion_mgr.get_target_paths())
         self.target_paths_model = target_paths_model
 
         # Add user controls for choosing a folder to convert
@@ -437,7 +658,7 @@ class HomeWindow(QWidget):
         vert_header.setSectionResizeMode(QHeaderView.Fixed)
         # ....
         layout.addWidget(targets_view)
-        self.targets_table = targets_view
+        self.targets_table = targets_view  # TODO renaming
 
         # Add a settings area
         conversion_settings_area = QVBoxLayout()
@@ -540,8 +761,12 @@ class HomeWindow(QWidget):
         self.resize(800, 600)  # Resize children (if needed) below this line
         targets_view.setColumnWidth(0, targets_view.width() / 2)
         targets_view.setColumnWidth(1, targets_view.width() / 2)
-        # Auto show() the widget!
-        self.show()
+        # # Auto show() the widget!
+        # self.show()
+
+    def handle_back_clicked(self):
+        self.hide()
+        self.request_last_step.emit()
 
     def clear_selected_path(self):
         # Clear data
@@ -764,7 +989,21 @@ def run_gui():
     app = QApplication(sys.argv)
 
     # This widget shows itself (the main GUI entrypoint)
-    my_widget = HomeWindow()
+    # my_widget = HomeWindow()
+    wizard_step1 = Wizard1PickFiles()
+    wizard_step2 = Wizard2ConversionSettings()
+    wizard_step3 = Wizard3SaveSettings()
+    wizard_step4 = HomeWindow()
+
+    wizard_step1.request_next_step.connect(wizard_step2.show)
+
+    wizard_step2.request_last_step.connect(wizard_step1.show)
+    wizard_step2.request_next_step.connect(wizard_step3.show)
+
+    wizard_step3.request_last_step.connect(wizard_step2.show)
+    wizard_step3.request_next_step.connect(wizard_step4.show)
+
+    wizard_step4.request_last_step.connect(wizard_step3.show)
 
     # Run the program/start the event loop with exec()
     sys.exit(app.exec())
