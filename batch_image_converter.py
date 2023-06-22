@@ -443,9 +443,6 @@ class ConversionManager(QObject):
                 source_files_handled += 1
 
         self.write_conversion_log()
-        task_record_path = self.get_safe_output_path(os.path.join(self.output_path, 'image_conversion_log'), 'json')
-        with open(task_record_path, 'w', encoding='utf8') as fhandle:
-            json.dump(self.target_paths, fhandle, indent=4)
 
         # TODO handle degenerate cases/0 files, no dest folder etc.
         self.file_save_progress.emit(image_path, source_files_handled, len(self.target_paths))  # TODO refactor
@@ -466,6 +463,7 @@ class WizardPickFiles(QWidget):
         # TODO refactor
         conversion_mgr = get_conversion_manager()
         conversion_mgr.source_extension_filter_updated.connect(self.update_input_ext_filter_summary)
+        conversion_mgr.file_search_progress.connect(self.handle_file_search_progress)
         self.conversion_mgr = conversion_mgr
 
         self.error_modal = None
@@ -635,7 +633,14 @@ class WizardPickFiles(QWidget):
         self.conversion_mgr.request_cancel_folder_open()
 
     def handle_search_progress_popup_ok(self):
-        self.file_search_progress_modal.close()
+        self.file_search_progress_modal.hide()
+
+    def handle_file_search_progress(self, match_count, search_count):
+        """Handle intermittent file search progress updates, refresh the UI"""
+        if self.isVisible():
+            popup = self.file_search_progress_modal
+            popup.set_message(f'({match_count:,}) matches\n({search_count:,}) searched...')
+            QApplication.instance().processEvents()
 
     def handle_choose_source_path(self):
         manager = self.conversion_mgr
@@ -673,6 +678,7 @@ class WizardPickFiles(QWidget):
         box.resize(400, box.minimumSizeHint().height())  # TODO: Fix this
         self.file_search_progress_modal = box
         box.show()
+        # TODO handle popup close
 
         app.processEvents()
 
@@ -937,6 +943,7 @@ class CustomModal(QWidget):
         self.setWindowTitle(user_title)
 
         message = QLabel()
+        message.setMinimumWidth(1)
         message.setText(user_message)
         layout.addWidget(message)
         self.message = message
@@ -1252,15 +1259,16 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
 
     def handle_file_search_progress(self, match_count, search_count):
         """Handle intermittent file search progress updates, refresh the UI"""
-        popup = self.file_search_progress_modal
-        popup.set_message(f'({match_count:,}) matches\n({search_count:,}) searched...')
-        QApplication.instance().processEvents()
+        if self.isVisible():
+            popup = self.file_search_progress_modal
+            popup.set_message(f'({match_count:,}) matches\n({search_count:,}) searched...')
+            QApplication.instance().processEvents()
 
     def handle_search_progress_popup_ok(self):
-        self.file_search_progress_modal.close()
+        self.file_search_progress_modal.hide()
 
     def handle_save_progress_popup_ok(self):
-        self.file_save_progress_modal.close()
+        self.file_save_progress_modal.hide()
 
     def handle_choose_source_path(self):
         manager = self.conversion_mgr
@@ -1323,7 +1331,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
 
         # Ok button should close the modal
         ok_btn = box.button(QDialogButtonBox.Ok)
-        ok_btn.clicked.connect(box.close)
+        ok_btn.clicked.connect(box.hide)
 
         # Size and hold a reference to the window
         box.resize(300, box.minimumSizeHint().height())
@@ -1336,10 +1344,11 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
 
     def handle_file_save_progress(self, upcoming_filename, source_files_handled, total_count):
         """Handle intermittent file search progress updates, refresh the UI"""
-        popup = self.file_save_progress_modal
-        popup.set_message(f'Writing {upcoming_filename}\nFinished ({source_files_handled})/({total_count})')
-        popup.progress_bar.setValue(source_files_handled)
-        QApplication.instance().processEvents()
+        if self.isVisible():  # TODO, check this for all common GUI elements
+            popup = self.file_save_progress_modal
+            popup.set_message(f'Processing {os.path.basename(upcoming_filename)} ({upcoming_filename})\nFinished ({source_files_handled})/({total_count})')
+            popup.progress_bar.setValue(source_files_handled)
+            QApplication.instance().processEvents()
 
     def handle_convert(self):
         manager = self.conversion_mgr
@@ -1358,7 +1367,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         app = QApplication.instance()
 
         # Show a progress popup
-        box = CustomModal('Saving files...', f'Saved ()/()')
+        box = CustomModal('Processing...', f'Finished ()/()')
         box.set_buttons([QDialogButtonBox.Cancel, QDialogButtonBox.Ok])
         # ....
         cancel_btn = box.button(QDialogButtonBox.Cancel)
