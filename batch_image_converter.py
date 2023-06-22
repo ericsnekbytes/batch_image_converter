@@ -2,6 +2,7 @@
 
 
 import datetime
+import json
 import os.path
 import random
 import re
@@ -405,6 +406,7 @@ class ConversionManager(QObject):
                 continue
 
             # For each desired save file, write a file
+            images_written = False
             for output_ext in [ext for ext, val in self.output_extension_filter.items() if val]:
                 try:
                     output_path = self.get_safe_output_path(image_path, output_ext)
@@ -416,13 +418,12 @@ class ConversionManager(QObject):
                         user_image = user_image.resize(new_size)
                     user_image.save(output_path)
                     metadata['outputs'].append({output_path: True})  # TODO update UI
-                    source_files_handled += 1
+                    images_written = True
                 except OSError:
                     metadata['errors'].append({ERR_IMAGE_SAVE: output_ext})
                     traceback.print_exc()
                     print(f'[py_img_batcher] Error saving {image_path}, skipping...')
 
-                    source_files_handled += 1
                     continue
                 # except ImageBatcherException as err:  # TODO handle this properly
                 except Exception as err:
@@ -430,8 +431,13 @@ class ConversionManager(QObject):
                     traceback.print_exc()
                     print(f'[py_img_batcher] Unknown error for {image_path} / {output_ext}, skipping...')
 
-                    source_files_handled += 1
                     continue
+            if images_written:
+                source_files_handled += 1
+
+        task_record_path = self.get_safe_output_path(os.path.join(self.output_path, 'image_conversion_log'), 'json')
+        with open(task_record_path, 'w', encoding='utf8') as fhandle:
+            json.dump(self.target_paths, fhandle, indent=4)
 
         # TODO handle degenerate cases/0 files, no dest folder etc.
         self.file_save_progress.emit(image_path, source_files_handled, len(self.target_paths))  # TODO refactor
@@ -1352,6 +1358,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         ok_btn = box.button(QDialogButtonBox.Ok)
         ok_btn.clicked.connect(self.handle_save_progress_popup_ok)
         box.disable_button(QDialogButtonBox.Ok)
+        # TODO Fix, this is broken for multiple-output-image scenarios
         progress_bar = QProgressBar()
         progress_bar.setMinimum(0)
         progress_bar.setMaximum(len(manager.get_target_paths()))
