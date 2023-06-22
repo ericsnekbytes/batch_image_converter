@@ -1129,7 +1129,6 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
 
         # Set up output/save-as controls
         output_settings_box = QGroupBox('Image Save Formats:')
-        outputs_container.addWidget(output_settings_box)
         output_settings_area = QVBoxLayout()
         output_settings_box.setLayout(output_settings_area)
         # ....
@@ -1157,6 +1156,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         output_folder_area = QVBoxLayout()
         output_folder_box.setLayout(output_folder_area)
         outputs_container.addWidget(output_folder_box)
+        outputs_container.addWidget(output_settings_box)
         # output_folder_picker_header = QHBoxLayout()
         # output_folder_area.addLayout(output_folder_picker_header)
         # output_folder_picker_header.addWidget(QLabel('Destination Folder:'))
