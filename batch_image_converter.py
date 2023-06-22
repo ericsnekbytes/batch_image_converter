@@ -408,6 +408,11 @@ class ConversionManager(QObject):
                 try:
                     output_path = self.get_safe_output_path(image_path, output_ext)
                     print(f'[py_img_batcher] Writing {output_path}')
+                    if self.modifier_scale != 100:
+                        new_size = (int(user_image.size[0] * self.modifier_scale / 100),
+                                    int(user_image.size[1] * self.modifier_scale / 100))
+                        print(f'[py_img_batcher] Resizing to {new_size}')
+                        user_image = user_image.resize(new_size)
                     user_image.save(output_path)
                     metadata['outputs'].append({output_path: True})  # TODO update UI
                     source_files_handled += 1
@@ -1047,19 +1052,17 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         layout.addWidget(targets_view)
         self.targets_table = targets_view  # TODO renaming
 
-        # Add a settings area
-        conversion_settings_area = QVBoxLayout()
-        conv_settings_box = QGroupBox('Image Modifiers:')
-        conv_settings_box.setLayout(conversion_settings_area)
-        layout.addWidget(conv_settings_box)
-        # ....
         # Set up a source-filetypes summary and controls
-        src_formats_header = QHBoxLayout()
-        conversion_settings_area.addLayout(src_formats_header)
+        source_ext_box = QGroupBox('File Search Settings:')
+        source_ext_area = QVBoxLayout()
+        source_ext_box.setLayout(source_ext_area)
+        layout.addWidget(source_ext_box)
+        # src_formats_header = QHBoxLayout()
+        # source_ext_area.addLayout(src_formats_header)
         # Set up the source-filetypes extension picker header
         src_extensions_header = QHBoxLayout()
-        src_extensions_header.addWidget(QLabel('File Search Settings:'))
-        conversion_settings_area.addLayout(src_extensions_header)
+        # src_extensions_header.addWidget(QLabel('File Search Settings:'))
+        source_ext_area.addLayout(src_extensions_header)
         src_extensions_summary = QLabel()
         src_extensions_header.addWidget(src_extensions_summary)
         src_extensions_header.addStretch()
@@ -1067,16 +1070,22 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         self.update_input_ext_filter_summary()  # Shows a list of selected extensions
         # Set up the extensions picker controls
         src_ext_picker_controls = QHBoxLayout()
-        conversion_settings_area.addLayout(src_ext_picker_controls)
+        source_ext_area.addLayout(src_ext_picker_controls)
         src_ext_picker_btn = QPushButton('Pick Filetypes')
         src_ext_picker_btn.clicked.connect(self.handle_input_ext_picker_clicked)
         src_ext_picker_controls.addWidget(src_ext_picker_btn)
         src_ext_picker_controls.addStretch()
         self.extension_picker_btn = src_ext_picker_btn
+
+        image_mod_settings_box = QGroupBox('Image Modifiers:')
+        image_mod_settings_area = QVBoxLayout()
+        image_mod_settings_box.setLayout(image_mod_settings_area)
+        layout.addWidget(image_mod_settings_box)
+        # ....
         # ....
         # Set up scale factor controls
         scale_factor_header = QHBoxLayout()
-        conversion_settings_area.addLayout(scale_factor_header)
+        image_mod_settings_area.addLayout(scale_factor_header)
         scale_factor_header.addWidget(QLabel('Scale Factor:'))
         scale_factor_summary = QLabel('')  # Shows the current scale factor
         scale_factor_header.addWidget(scale_factor_summary)
@@ -1088,7 +1097,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         scale_factor.setMaximum(100)
         scale_factor.setValue(100)
         scale_factor.valueChanged.connect(self.handle_scale_modifer_update_request)
-        conversion_settings_area.addWidget(scale_factor)
+        image_mod_settings_area.addWidget(scale_factor)
         self.scale_factor = scale_factor
         self.handle_scale_modifer_update_request(scale_factor.value())
 
@@ -1099,12 +1108,12 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         output_settings_box.setLayout(output_settings_area)
         # ....
         # Set up save-as extensions picker header
-        output_ext_picker_header = QHBoxLayout()
-        output_settings_area.addLayout(output_ext_picker_header)
-        output_ext_picker_header.addWidget(QLabel('Output Filetype(s):'))
+        # output_ext_picker_header = QHBoxLayout()
+        # output_settings_area.addLayout(output_ext_picker_header)
+        # output_ext_picker_header.addWidget(QLabel('Output Filetype(s):'))
         output_filter_summary = QLabel()  # Shows a list of selected save-as/output extensions
-        output_ext_picker_header.addWidget(output_filter_summary)
-        output_ext_picker_header.addStretch()
+        # output_ext_picker_header.addWidget(output_filter_summary)
+        # output_ext_picker_header.addStretch()
         self.output_filter_summary = output_filter_summary
         self.update_output_ext_filter_summary()
         # Set up the save-as extension picker controls
@@ -1113,6 +1122,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         output_ext_picker_btn = QPushButton('Pick Filetypes')
         output_ext_picker_btn.clicked.connect(self.handle_output_ext_picker_clicked)
         output_ext_picker_area.addWidget(output_ext_picker_btn)
+        output_ext_picker_area.addWidget(output_filter_summary)
         output_ext_picker_area.addStretch()
         self.output_ext_picker_btn = output_ext_picker_btn
 
@@ -1136,6 +1146,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         output_path_picker_btn = QPushButton('Choose Folder')
         output_path_picker_btn.clicked.connect(self.handle_choose_output_path)
         output_path_picker_controls.addWidget(output_path_picker_btn)
+        output_path_picker_controls.addWidget(output_folder_picker_lbl)
         output_path_picker_controls.addStretch()
         self.output_path_picker_btn = output_path_picker_btn
 
