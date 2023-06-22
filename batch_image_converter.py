@@ -775,7 +775,7 @@ class WizardSaveSettings(QWidget):
         self.output_ext_picker_modal = ExtensionPicker(conversion_mgr.get_file_save_filters())
         self.output_ext_picker_modal.request_extension_updated.connect(self.handle_output_extensions_update_request)
 
-        self.setWindowTitle('Batch Image Converter: Step 2')
+        self.setWindowTitle('Batch Image Converter (Step 2/3)')
         layout = QVBoxLayout()
         self.setLayout(layout)
 
@@ -1016,9 +1016,16 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         target_paths_model.set_new_data(conversion_mgr.get_target_paths())
         self.target_paths_model = target_paths_model
 
+        settings_container = QSplitter()
+        layout.addWidget(settings_container)
+
         # Add user controls for choosing a folder to convert
-        src_folder_header = QHBoxLayout()
-        layout.addLayout(src_folder_header)
+        src_folder_box = QGroupBox('Search Folder:')
+        src_folder_area = QVBoxLayout()
+        src_folder_box.setLayout(src_folder_area)
+        settings_container.addWidget(src_folder_box)
+        # src_folder_header = QHBoxLayout()
+        # layout.addLayout(src_folder_header)
         # src_folder_header.addWidget(QLabel('Selected Folder:'))  # TODO remove
         src_folder_lbl = QLabel()
         # src_folder_header.addWidget(src_folder_lbl)
@@ -1027,7 +1034,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         self.clear_source_path_summary()
         # ....
         src_folder_controls = QHBoxLayout()
-        layout.addLayout(src_folder_controls)
+        src_folder_area.addLayout(src_folder_controls)
         # ....
         pick_src_folder_btn = QPushButton('Choose Folder')
         pick_src_folder_btn.clicked.connect(self.handle_choose_source_path)
@@ -1056,7 +1063,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         source_ext_box = QGroupBox('File Search Settings:')
         source_ext_area = QVBoxLayout()
         source_ext_box.setLayout(source_ext_area)
-        layout.addWidget(source_ext_box)
+        settings_container.addWidget(source_ext_box)
         # src_formats_header = QHBoxLayout()
         # source_ext_area.addLayout(src_formats_header)
         # Set up the source-filetypes extension picker header
@@ -1101,9 +1108,12 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         self.scale_factor = scale_factor
         self.handle_scale_modifer_update_request(scale_factor.value())
 
+        outputs_container = QSplitter()
+        layout.addWidget(outputs_container)
+
         # Set up output/save-as controls
         output_settings_box = QGroupBox('Image Save Formats:')
-        layout.addWidget(output_settings_box)
+        outputs_container.addWidget(output_settings_box)
         output_settings_area = QVBoxLayout()
         output_settings_box.setLayout(output_settings_area)
         # ....
@@ -1130,7 +1140,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         output_folder_box = QGroupBox('Destination folder:')
         output_folder_area = QVBoxLayout()
         output_folder_box.setLayout(output_folder_area)
-        layout.addWidget(output_folder_box)
+        outputs_container.addWidget(output_folder_box)
         # output_folder_picker_header = QHBoxLayout()
         # output_folder_area.addLayout(output_folder_picker_header)
         # output_folder_picker_header.addWidget(QLabel('Destination Folder:'))
