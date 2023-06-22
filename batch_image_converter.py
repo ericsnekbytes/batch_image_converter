@@ -382,6 +382,7 @@ class ConversionManager(QObject):
         # For each image file, try to open the image, process, and save it
         self.cancel_save_flag = False
         source_files_handled = 0
+        image_path = ''
         for image_path, metadata in self.target_paths.items():
 
             self.file_save_progress.emit(image_path, source_files_handled, len(self.target_paths))
@@ -432,6 +433,7 @@ class ConversionManager(QObject):
                     source_files_handled += 1
                     continue
 
+        # TODO handle degenerate cases/0 files, no dest folder etc.
         self.file_save_progress.emit(image_path, source_files_handled, len(self.target_paths))  # TODO refactor
         return {
             'targets': self.target_paths,
@@ -522,14 +524,13 @@ class WizardPickFiles(QWidget):
         settings_container.addWidget(settings_box)
         # ....
         # Set up a source-filetypes summary and controls
-        src_formats_header = QHBoxLayout()
-        settings_area.addLayout(src_formats_header)
+        # src_formats_header = QHBoxLayout()
+        # settings_area.addLayout(src_formats_header)
         # Set up the source-filetypes extension picker header
-        src_extensions_header = QHBoxLayout()  # TODO refactor and remove these
+        # src_extensions_header = QHBoxLayout()  # TODO refactor and remove these
         # src_extensions_header.addWidget(QLabel('Selected Filetypes:'))
-        settings_area.addLayout(src_extensions_header)
+        # settings_area.addLayout(src_extensions_header)
         src_extensions_summary = QLabel()
-        src_extensions_header.addStretch()
         self.src_extensions_summary = src_extensions_summary
         self.update_input_ext_filter_summary()  # Shows a list of selected extensions
         # Set up the extensions picker controls
@@ -1067,12 +1068,12 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         # src_formats_header = QHBoxLayout()
         # source_ext_area.addLayout(src_formats_header)
         # Set up the source-filetypes extension picker header
-        src_extensions_header = QHBoxLayout()
+        # src_extensions_header = QHBoxLayout()
         # src_extensions_header.addWidget(QLabel('File Search Settings:'))
-        source_ext_area.addLayout(src_extensions_header)
+        # source_ext_area.addLayout(src_extensions_header)
         src_extensions_summary = QLabel()
-        src_extensions_header.addWidget(src_extensions_summary)
-        src_extensions_header.addStretch()
+        # src_extensions_header.addWidget(src_extensions_summary)
+        # src_extensions_header.addStretch()
         self.src_extensions_summary = src_extensions_summary
         self.update_input_ext_filter_summary()  # Shows a list of selected extensions
         # Set up the extensions picker controls
@@ -1081,6 +1082,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         src_ext_picker_btn = QPushButton('Pick Filetypes')
         src_ext_picker_btn.clicked.connect(self.handle_input_ext_picker_clicked)
         src_ext_picker_controls.addWidget(src_ext_picker_btn)
+        src_ext_picker_controls.addWidget(src_extensions_summary)
         src_ext_picker_controls.addStretch()
         self.extension_picker_btn = src_ext_picker_btn
 
