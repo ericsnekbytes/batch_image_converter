@@ -219,6 +219,7 @@ class ConversionManager(QObject):
     output_path_updated = Signal(str)
     source_extension_filter_updated = Signal()
     output_extension_filter_updated = Signal()
+    modifier_scale_updated = Signal(int)
 
     def __init__(self):
         super().__init__()
@@ -229,6 +230,7 @@ class ConversionManager(QObject):
         self.conv_timestamp = None
         self.cancel_folder_open_flag = False
         self.cancel_save_flag = False
+        self.modifier_scale = 100
 
         self.output_path = ''  # The output/destination folder
         self.output_extension_filter = {key: False for key in EXTENSIONS}
@@ -241,6 +243,10 @@ class ConversionManager(QObject):
     def get_file_save_filters(self):
         """Return extensions to save-as when writing output files"""
         return self.output_extension_filter
+
+    def set_scale_modifier(self, value):
+        self.modifier_scale = value
+        self.modifier_scale_updated.emit(value)
 
     def get_source_path(self):
         return self.source_path
@@ -429,7 +435,7 @@ class ConversionManager(QObject):
         }
 
 
-class Wizard1PickFiles(QWidget):
+class WizardPickFiles(QWidget):
 
     request_next_step = Signal()
 
@@ -477,22 +483,55 @@ class Wizard1PickFiles(QWidget):
         self.task_area = task_area
 
         # Add user controls for choosing a folder to convert
+        src_folder_box = QGroupBox('Search Folder')
+        src_folder_area = QVBoxLayout()
+        src_folder_box.setLayout(src_folder_area)
+        task_area.addWidget(src_folder_box)
         src_folder_header = QHBoxLayout()
-        task_area.addLayout(src_folder_header)
-        src_folder_header.addWidget(QLabel('Select a folder with some images'))
+        src_folder_area.addLayout(src_folder_header)
+        # src_folder_header.addWidget(QLabel('Select a folder with some images'))
         src_folder_lbl = QLabel()
-        src_folder_header.addWidget(src_folder_lbl)
+        src_folder_header.addStretch()
         self.src_folder_lbl = src_folder_lbl
+        self.clear_source_path_summary()
         # self.clear_selected_path()  # TODO Fix/refactor
         # ....
         src_folder_controls = QHBoxLayout()
-        task_area.addLayout(src_folder_controls)
+        src_folder_area.addLayout(src_folder_controls)
         # ....
         pick_src_folder_btn = QPushButton('Pick Folder')
         pick_src_folder_btn.clicked.connect(self.handle_choose_source_path)
         src_folder_controls.addWidget(pick_src_folder_btn)
+        src_folder_controls.addWidget(src_folder_lbl)
         src_folder_controls.addStretch()
         self.pick_src_folder_btn = pick_src_folder_btn
+
+        # Add a settings area
+        settings_area = QVBoxLayout()
+        settings_box = QGroupBox('File Search Settings:')
+        settings_box.setLayout(settings_area)
+        task_area.addWidget(settings_box)
+        # ....
+        # Set up a source-filetypes summary and controls
+        src_formats_header = QHBoxLayout()
+        settings_area.addLayout(src_formats_header)
+        # Set up the source-filetypes extension picker header
+        src_extensions_header = QHBoxLayout()  # TODO refactor and remove these
+        # src_extensions_header.addWidget(QLabel('Selected Filetypes:'))
+        settings_area.addLayout(src_extensions_header)
+        src_extensions_summary = QLabel()
+        src_extensions_header.addStretch()
+        self.src_extensions_summary = src_extensions_summary
+        self.update_input_ext_filter_summary()  # Shows a list of selected extensions
+        # Set up the extensions picker controls
+        src_ext_picker_controls = QHBoxLayout()
+        settings_area.addLayout(src_ext_picker_controls)
+        src_ext_picker_btn = QPushButton('Pick Filetypes')
+        src_ext_picker_btn.clicked.connect(self.handle_input_ext_picker_clicked)
+        src_ext_picker_controls.addWidget(src_ext_picker_btn)
+        src_ext_picker_controls.addWidget(src_extensions_summary)
+        src_ext_picker_controls.addStretch()
+        self.extension_picker_btn = src_ext_picker_btn
 
         # TODO refactor
         self.target_paths_model = get_target_paths_model()
@@ -513,39 +552,15 @@ class Wizard1PickFiles(QWidget):
         task_area.addWidget(targets_view)
         self.targets_view = targets_view
 
-        # Add a settings area
-        settings_area = QVBoxLayout()
-        settings_box = QGroupBox('File Search Settings:')
-        settings_box.setLayout(settings_area)
-        task_area.addWidget(settings_box)
-        # ....
-        # Set up a source-filetypes summary and controls
-        src_formats_header = QHBoxLayout()
-        settings_area.addLayout(src_formats_header)
-        # Set up the source-filetypes extension picker header
-        src_extensions_header = QHBoxLayout()
-        src_extensions_header.addWidget(QLabel('Selected Filetypes:'))
-        settings_area.addLayout(src_extensions_header)
-        src_extensions_summary = QLabel()
-        src_extensions_header.addWidget(src_extensions_summary)
-        src_extensions_header.addStretch()
-        self.src_extensions_summary = src_extensions_summary
-        self.update_input_ext_filter_summary()  # Shows a list of selected extensions
-        # Set up the extensions picker controls
-        src_ext_picker_controls = QHBoxLayout()
-        settings_area.addLayout(src_ext_picker_controls)
-        src_ext_picker_btn = QPushButton('Pick Filetypes')
-        src_ext_picker_btn.clicked.connect(self.handle_input_ext_picker_clicked)
-        src_ext_picker_controls.addWidget(src_ext_picker_btn)
-        src_ext_picker_controls.addStretch()
-        self.extension_picker_btn = src_ext_picker_btn
-
         # Size the widget after adding stuff to the layout
         self.resize(800, 600)  # Resize children (if needed) below this line
         targets_view.setColumnWidth(0, targets_view.width() / 2)
         targets_view.setColumnWidth(1, targets_view.width() / 2)
         # Auto show() the widget!
         self.show()
+
+    def clear_source_path_summary(self):
+        self.src_folder_lbl.setText('(Empty) Select a folder with some images')
 
     def handle_source_path_updated(self, path):
         self.src_folder_lbl.setText(path)
@@ -583,10 +598,11 @@ class Wizard1PickFiles(QWidget):
 
     def show_conversion_task_stats(self):
         manager = self.conversion_mgr
+        source_path = manager.get_source_path()
 
         self.src_folder_lbl.setText(
-            f'({len(manager.get_target_paths()):,}) images in '
-            f'folder "{os.path.basename(manager.get_source_path())}"'
+            f'({len(manager.get_target_paths()):,} images) in '
+            f'"{os.path.basename(source_path)}" ({source_path})'
         )
 
     def set_folder_choose_cancel_flag(self):
@@ -652,7 +668,7 @@ class Wizard1PickFiles(QWidget):
         self.show_conversion_task_stats()
 
 
-class Wizard2ConversionSettings(QWidget):
+class WizardConversionSettings(QWidget):
 
     request_last_step = Signal()
     request_next_step = Signal()
@@ -660,7 +676,11 @@ class Wizard2ConversionSettings(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle('Batch Image Converter (Step 2/3)')
+        conversion_mgr = get_conversion_manager()
+        conversion_mgr.modifier_scale_updated.connect(self.handle_scale_updated)
+        self.conversion_mgr = conversion_mgr
+
+        self.setWindowTitle('Batch Image Converter (Step 3/3)')
         layout = QVBoxLayout()
         self.setLayout(layout)
 
@@ -675,7 +695,7 @@ class Wizard2ConversionSettings(QWidget):
         self.back_btn = back_btn
 
         step_navigation_area.addStretch()
-        step_navigation_area.addWidget(QLabel('Step 2: (Optional) Image Modifiers'))
+        step_navigation_area.addWidget(QLabel('Step 3: (Optional) Image Modifiers'))
         step_navigation_area.addStretch()
 
         next_btn = QPushButton('Next')
@@ -687,7 +707,27 @@ class Wizard2ConversionSettings(QWidget):
         layout.addLayout(task_area)
         self.task_area = task_area
 
-        task_area.addWidget(QTextEdit())
+        # Set up scale factor controls
+        percent_scale_box = QGroupBox('Percent Scaling')
+        percent_scale_area = QVBoxLayout()
+        percent_scale_box.setLayout(percent_scale_area)
+        task_area.addWidget(percent_scale_box)
+        scale_factor_header = QHBoxLayout()
+        percent_scale_area.addLayout(scale_factor_header)
+        scale_factor_header.addWidget(QLabel('Scale Factor:'))
+        scale_factor_summary = QLabel('')  # Shows the current scale factor
+        scale_factor_header.addWidget(scale_factor_summary)
+        scale_factor_header.addStretch()
+        self.scale_factor_summary = scale_factor_summary
+        # Configure/add the scale factor slider
+        scale_factor = QSlider(Qt.Horizontal)
+        scale_factor.setMinimum(1)
+        scale_factor.setMaximum(100)
+        scale_factor.setValue(100)
+        scale_factor.valueChanged.connect(self.handle_scale_modifer_update_request)
+        percent_scale_area.addWidget(scale_factor)
+        self.scale_factor = scale_factor
+        self.handle_scale_modifer_update_request(scale_factor.value())
 
         # Size the widget after adding stuff to the layout
         self.resize(800, self.sizeHint().height())  # Resize children (if needed) below this line
@@ -700,8 +740,16 @@ class Wizard2ConversionSettings(QWidget):
         self.hide()
         self.request_next_step.emit()
 
+    def handle_scale_modifer_update_request(self, value):
+        self.conversion_mgr.set_scale_modifier(value)
 
-class Wizard3SaveSettings(QWidget):
+    def handle_scale_updated(self, value):
+        self.scale_factor_summary.setText(f'({value})')
+        if self.scale_factor.value() != value:
+            self.scale_factor.setValue(value)
+
+
+class WizardSaveSettings(QWidget):
 
     request_last_step = Signal()
     request_next_step = Signal()
@@ -718,7 +766,7 @@ class Wizard3SaveSettings(QWidget):
         self.output_ext_picker_modal = ExtensionPicker(conversion_mgr.get_file_save_filters())
         self.output_ext_picker_modal.request_extension_updated.connect(self.handle_output_extensions_update_request)
 
-        self.setWindowTitle('Batch Image Converter: Step 3')
+        self.setWindowTitle('Batch Image Converter: Step 2')
         layout = QVBoxLayout()
         self.setLayout(layout)
 
@@ -733,7 +781,7 @@ class Wizard3SaveSettings(QWidget):
         self.back_btn = back_btn
 
         step_navigation_area.addStretch()
-        step_navigation_area.addWidget(QLabel('Step 3: Save Settings'))
+        step_navigation_area.addWidget(QLabel('Step 2: Save Settings'))
         step_navigation_area.addStretch()
 
         next_btn = QPushButton('Next')
@@ -746,7 +794,7 @@ class Wizard3SaveSettings(QWidget):
         self.task_area = task_area
 
         # Set up output/save-as controls
-        output_settings_box = QGroupBox('File Save Settings:')
+        output_settings_box = QGroupBox('Image Save Formats:')
         task_area.addWidget(output_settings_box)
         output_settings_area = QVBoxLayout()
         output_settings_box.setLayout(output_settings_area)
@@ -892,7 +940,7 @@ class CustomModal(QWidget):
         btn.setEnabled(False)
 
 
-class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
+class WizardSummaryScreen(QWidget):  # TODO renaming/step4
     """Batch image converter home widget"""
 
     request_last_step = Signal()
@@ -908,6 +956,7 @@ class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
         conversion_mgr.file_save_progress.connect(self.handle_file_save_progress)
         conversion_mgr.source_path_updated.connect(self.handle_source_path_updated)
         conversion_mgr.output_path_updated.connect(self.handle_output_path_updated)
+        conversion_mgr.modifier_scale_updated.connect(self.handle_scale_updated)
         self.conversion_mgr = conversion_mgr
 
         # Set some initial widget properties
@@ -950,11 +999,12 @@ class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
         # Add user controls for choosing a folder to convert
         src_folder_header = QHBoxLayout()
         layout.addLayout(src_folder_header)
-        src_folder_header.addWidget(QLabel('Selected Folder:'))
+        # src_folder_header.addWidget(QLabel('Selected Folder:'))  # TODO remove
         src_folder_lbl = QLabel()
-        src_folder_header.addWidget(src_folder_lbl)
+        # src_folder_header.addWidget(src_folder_lbl)
+        # src_folder_header.addStretch()
         self.src_folder_lbl = src_folder_lbl
-        self.handle_path_cleared()
+        self.clear_source_path_summary()
         # ....
         src_folder_controls = QHBoxLayout()
         layout.addLayout(src_folder_controls)
@@ -962,6 +1012,7 @@ class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
         pick_src_folder_btn = QPushButton('Choose Folder')
         pick_src_folder_btn.clicked.connect(self.handle_choose_source_path)
         src_folder_controls.addWidget(pick_src_folder_btn)
+        src_folder_controls.addWidget(src_folder_lbl)
         src_folder_controls.addStretch()
         self.pick_src_folder_btn = pick_src_folder_btn
 
@@ -983,7 +1034,7 @@ class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
 
         # Add a settings area
         conversion_settings_area = QVBoxLayout()
-        conv_settings_box = QGroupBox('Conversion Settings:')
+        conv_settings_box = QGroupBox('Image Modifiers:')
         conv_settings_box.setLayout(conversion_settings_area)
         layout.addWidget(conv_settings_box)
         # ....
@@ -992,7 +1043,7 @@ class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
         conversion_settings_area.addLayout(src_formats_header)
         # Set up the source-filetypes extension picker header
         src_extensions_header = QHBoxLayout()
-        src_extensions_header.addWidget(QLabel('Selected Filetypes:'))
+        src_extensions_header.addWidget(QLabel('File Search Settings:'))
         conversion_settings_area.addLayout(src_extensions_header)
         src_extensions_summary = QLabel()
         src_extensions_header.addWidget(src_extensions_summary)
@@ -1021,13 +1072,13 @@ class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
         scale_factor.setMinimum(1)
         scale_factor.setMaximum(100)
         scale_factor.setValue(100)
-        self.handle_scale_slider_changed(scale_factor.value())
-        scale_factor.valueChanged.connect(self.handle_scale_slider_changed)
+        scale_factor.valueChanged.connect(self.handle_scale_modifer_update_request)
         conversion_settings_area.addWidget(scale_factor)
         self.scale_factor = scale_factor
+        self.handle_scale_modifer_update_request(scale_factor.value())
 
         # Set up output/save-as controls
-        output_settings_box = QGroupBox('File Save Settings:')
+        output_settings_box = QGroupBox('Image Save Formats:')
         layout.addWidget(output_settings_box)
         output_settings_area = QVBoxLayout()
         output_settings_box.setLayout(output_settings_area)
@@ -1069,14 +1120,15 @@ class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
         output_path_picker_controls.addStretch()
         self.output_path_picker_btn = output_path_picker_btn
 
-        # Add conversion launch controls
-        convert_controls = QHBoxLayout()
-        convert_controls.addStretch()
-        layout.addLayout(convert_controls)
-        convert_btn = QPushButton('Convert')
-        convert_btn.clicked.connect(self.handle_convert)
-        convert_controls.addWidget(convert_btn)
-        self.convert_btn = convert_btn
+        # TODO remove this, it's now in the step controls
+        # # Add conversion launch controls
+        # convert_controls = QHBoxLayout()
+        # convert_controls.addStretch()
+        # layout.addLayout(convert_controls)
+        # convert_btn = QPushButton('Convert')
+        # convert_btn.clicked.connect(self.handle_convert)
+        # convert_controls.addWidget(convert_btn)
+        # self.convert_btn = convert_btn
 
         # Size the widget after adding stuff to the layout
         self.resize(800, 600)  # Resize children (if needed) below this line
@@ -1092,11 +1144,8 @@ class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
     def handle_source_path_updated(self, path):
         self.src_folder_lbl.setText(path)
 
-    def handle_path_cleared(self):
-        # Reset the UI
-        manager = self.conversion_mgr
-        self.src_folder_lbl.setText('(No Folder Selected)')
-        self.target_paths_model.set_new_data(manager.get_target_paths())
+    def clear_source_path_summary(self):
+        self.src_folder_lbl.setText('(Empty) Select a folder with some images')
 
     def user_clear_selected_path(self):
         # Clear data
@@ -1113,10 +1162,11 @@ class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
 
     def show_conversion_task_stats(self):
         manager = self.conversion_mgr
+        source_path = manager.get_source_path()
 
         self.src_folder_lbl.setText(
-            f'({len(manager.get_target_paths()):,}) images in '
-            f'folder "{os.path.basename(manager.get_source_path())}"'
+            f'({len(manager.get_target_paths()):,} images) in '
+            f'"{os.path.basename(source_path)}" ({source_path})'
         )
 
     def set_folder_choose_cancel_flag(self):
@@ -1313,8 +1363,13 @@ class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
         self.output_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_save_filters())
         self.output_ext_picker_modal.show()
 
-    def handle_scale_slider_changed(self, value):
+    def handle_scale_modifer_update_request(self, value):
+        self.conversion_mgr.set_scale_modifier(value)
+
+    def handle_scale_updated(self, value):
         self.scale_factor_summary.setText(f'({value})')
+        if self.scale_factor.value() != value:
+            self.scale_factor.setValue(value)
 
 
 def run_gui():
@@ -1324,10 +1379,13 @@ def run_gui():
 
     # This widget shows itself (the main GUI entrypoint)
     # my_widget = HomeWindow()
-    wizard_step1 = Wizard1PickFiles()
-    wizard_step2 = Wizard2ConversionSettings()
-    wizard_step3 = Wizard3SaveSettings()
-    wizard_step4 = Wizard4SummaryScreen()
+    wizard_step1 = WizardPickFiles()
+    wizard_step2 = WizardSaveSettings()
+    wizard_step2.move(wizard_step1.pos())
+    wizard_step3 = WizardConversionSettings()
+    wizard_step3.move(wizard_step1.pos())
+    wizard_summary = WizardSummaryScreen()
+    wizard_summary.move(wizard_step1.pos())
 
     wizard_step1.request_next_step.connect(wizard_step2.show)
 
@@ -1335,9 +1393,9 @@ def run_gui():
     wizard_step2.request_next_step.connect(wizard_step3.show)
 
     wizard_step3.request_last_step.connect(wizard_step2.show)
-    wizard_step3.request_next_step.connect(wizard_step4.show)
+    wizard_step3.request_next_step.connect(wizard_summary.show)
 
-    wizard_step4.request_last_step.connect(wizard_step3.show)
+    wizard_summary.request_last_step.connect(wizard_step3.show)
 
     # Run the program/start the event loop with exec()
     sys.exit(app.exec())
