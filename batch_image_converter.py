@@ -363,6 +363,11 @@ class ConversionManager(QObject):
         self.source_extension_filter[ext_name] = check_state
         self.source_extension_filter_updated.emit()
 
+    def write_conversion_log(self):
+        task_record_path = self.get_safe_output_path(os.path.join(self.output_path, 'image_conversion_log'), 'json')
+        with open(task_record_path, 'w', encoding='utf8') as fhandle:
+            json.dump(self.target_paths, fhandle, indent=4)
+
     def get_safe_output_path(self, src_path, extension):
         base_name = os.path.basename(os.path.splitext(src_path)[0])
 
@@ -387,7 +392,9 @@ class ConversionManager(QObject):
         for image_path, metadata in self.target_paths.items():
 
             self.file_save_progress.emit(image_path, source_files_handled, len(self.target_paths))
-            if self.cancel_folder_open_flag:
+            if self.cancel_save_flag:
+                self.write_conversion_log()
+
                 # Abort if needed
                 return {
                     'targets': self.target_paths,
@@ -435,6 +442,7 @@ class ConversionManager(QObject):
             if images_written:
                 source_files_handled += 1
 
+        self.write_conversion_log()
         task_record_path = self.get_safe_output_path(os.path.join(self.output_path, 'image_conversion_log'), 'json')
         with open(task_record_path, 'w', encoding='utf8') as fhandle:
             json.dump(self.target_paths, fhandle, indent=4)
