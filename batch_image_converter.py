@@ -1330,6 +1330,16 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
     def handle_convert(self):
         manager = self.conversion_mgr
 
+        if len(manager.get_target_paths()) == 0:
+            self.show_error_message('No input images! (Did you check for the right file types?)')
+            return
+        if not manager.get_source_path():
+            self.show_error_message('No source folder selected!')
+            return
+        if not manager.get_output_path():
+            self.show_error_message('No output folder selected!')
+            return
+
         # Obtain the app, to perform manual UI updates
         app = QApplication.instance()
 
