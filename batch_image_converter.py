@@ -10,7 +10,7 @@ import traceback
 
 from PIL import Image
 from PySide6.QtWidgets import QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox, QMessageBox, \
-    QTableView, QHeaderView, QStyleFactory, QDialog, QDialogButtonBox, QFrame
+    QTableView, QHeaderView, QStyleFactory, QDialog, QDialogButtonBox, QFrame, QProgressBar
 from PySide6.QtCore import Qt, Signal, QAbstractTableModel, QObject
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, QPushButton,
                                QHBoxLayout)
@@ -44,6 +44,12 @@ def get_target_paths_model():
     if _TARGET_PATHS_MODEL is None:
         _TARGET_PATHS_MODEL = TargetPathsModel()
     return _TARGET_PATHS_MODEL
+_CONVERSION_MANAGER = None
+def get_conversion_manager():
+    global _CONVERSION_MANAGER
+    if _CONVERSION_MANAGER is None:
+        _CONVERSION_MANAGER = ConversionManager()
+    return _CONVERSION_MANAGER
 
 
 class ImageBatcherException(Exception):
@@ -207,7 +213,12 @@ class ConversionManager(QObject):
     """Handles conversion data/procedures"""
 
     file_search_progress = Signal(int, int)
+    file_save_progress = Signal(str, int, int)
     ready_for_ui_events = Signal()
+    source_path_updated = Signal(str)
+    output_path_updated = Signal(str)
+    source_extension_filter_updated = Signal()
+    output_extension_filter_updated = Signal()
 
     def __init__(self):
         super().__init__()
@@ -217,6 +228,7 @@ class ConversionManager(QObject):
         self.target_paths = {}
         self.conv_timestamp = None
         self.cancel_folder_open_flag = False
+        self.cancel_save_flag = False
 
         self.output_path = ''  # The output/destination folder
         self.output_extension_filter = {key: False for key in EXTENSIONS}
@@ -232,6 +244,9 @@ class ConversionManager(QObject):
 
     def get_source_path(self):
         return self.source_path
+
+    def request_cancel_save(self):
+        self.cancel_save_flag = True
 
     def request_cancel_folder_open(self):
         self.cancel_folder_open_flag = True
@@ -250,6 +265,7 @@ class ConversionManager(QObject):
             self.clear_source_path()
             self.source_path = source_path
             self.conv_timestamp = datetime.datetime.now()
+            self.source_path_updated.emit(source_path)
             # self.source_path_picker_lbl.setText(os.path.basename(output_path))
             return STATUS_OK
         else:
@@ -276,7 +292,7 @@ class ConversionManager(QObject):
                         # Abort if needed
                         self.clear_source_path()  # TODO be consistent when clearing
                         return {
-                            'matches': target_paths,
+                            'targets': target_paths,
                             'errors': [],
                             'canceled': True,
                         }
@@ -291,11 +307,11 @@ class ConversionManager(QObject):
                         extension_matched = matcher
                         break
 
-                if extension_matched:
-                    target_paths[filepath] = {'errors': []}  # Add a metadata dict for this file
+                if extension_matched:  # TODO dict schema, refactor/move
+                    target_paths[filepath] = {'errors': [], 'outputs': []}  # Add a metadata dict for this file
 
         return {
-            'matches': target_paths,
+            'targets': target_paths,
             'errors': [key for key, val in target_paths.items() if val['errors']],
             'canceled': self.cancel_folder_open_flag,
         }
@@ -305,11 +321,14 @@ class ConversionManager(QObject):
         self.source_path = ''
         self.target_paths = {}
 
+    def get_target_paths(self):
+        return self.target_paths
+
     def clear_output_path(self):
         self.output_path = ''
 
-    def get_target_paths(self):
-        return self.target_paths
+    def get_output_path(self):
+        return self.output_path
 
     def set_output_path(self, folder_path):
         if folder_path:
@@ -323,10 +342,91 @@ class ConversionManager(QObject):
                 return ERR_PATH_IS_NOT_FOLDER
 
             self.output_path = output_path
+            self.output_path_updated.emit(output_path)
             # self.output_path_picker_lbl.setText(os.path.basename(output_path))
             return STATUS_OK
         else:
             return ERR_FOLDER_INVALID
+
+    def set_file_save_filter(self, ext_name, check_state):
+        self.output_extension_filter[ext_name] = check_state
+        self.output_extension_filter_updated.emit()
+
+    def set_file_search_filter(self, ext_name, check_state):
+        self.source_extension_filter[ext_name] = check_state
+        self.source_extension_filter_updated.emit()
+
+    def get_safe_output_path(self, src_path, extension):
+        base_name = os.path.basename(os.path.splitext(src_path)[0])
+
+        name_attempt_counter = -1
+        current_name = os.path.join(self.output_path, f'{base_name}.{extension}')
+
+        while os.path.exists(current_name):
+            print(f'File {current_name} already exists, attempting new name...')
+            name_attempt_counter += 1
+            current_name = os.path.join(self.output_path, f'{base_name}.{name_attempt_counter:0>4}.{extension}')
+
+            if name_attempt_counter == 10000:
+                raise Exception('Error obtaining non-duplicate name')
+
+        return current_name
+
+    def start_conversion(self):
+        # For each image file, try to open the image, process, and save it
+        self.cancel_save_flag = False
+        source_files_handled = 0
+        for image_path, metadata in self.target_paths.items():
+
+            self.file_save_progress.emit(image_path, source_files_handled, len(self.target_paths))
+            if self.cancel_folder_open_flag:
+                # Abort if needed
+                return {
+                    'targets': self.target_paths,
+                    'errors': [],
+                    'canceled': True,
+                }
+
+            try:
+                user_image = Image.open(image_path)
+            except OSError as err:
+                metadata['errors'].append({ERR_IMAGE_OPEN: True})  # TODO encapsulate this >>>>>
+                traceback.print_exc()
+                print(f'[py_img_batcher] Error opening {image_path}, skipping...')
+
+                source_files_handled += 1  # TODO refactor
+                continue
+
+            # For each desired save file, write a file
+            for output_ext in [ext for ext, val in self.output_extension_filter.items() if val]:
+                try:
+                    output_path = self.get_safe_output_path(image_path, output_ext)
+                    print(f'[py_img_batcher] Writing {output_path}')
+                    user_image.save(output_path)
+                    metadata['outputs'].append({output_path: True})  # TODO update UI
+                    source_files_handled += 1
+                except OSError:
+                    metadata['errors'].append({ERR_IMAGE_SAVE: output_ext})
+                    traceback.print_exc()
+                    print(f'[py_img_batcher] Error saving {image_path}, skipping...')
+
+                    source_files_handled += 1
+                    continue
+                # except ImageBatcherException as err:  # TODO handle this properly
+                except Exception as err:
+                    metadata['errors'].append({'unknown error': output_ext})
+                    traceback.print_exc()
+                    print(f'[py_img_batcher] Unknown error for {image_path} / {output_ext}, skipping...')
+
+                    source_files_handled += 1
+                    continue
+
+        self.file_save_progress.emit(image_path, source_files_handled, len(self.target_paths))  # TODO refactor
+        return {
+            'targets': self.target_paths,
+            'errors': [key for key, val in self.target_paths.items() if val['errors']],
+            'canceled': self.cancel_save_flag,
+        }
 
 
 class Wizard1PickFiles(QWidget):
@@ -336,7 +436,17 @@ class Wizard1PickFiles(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle('Batch Image Converter: Step 1')
+        # TODO refactor
+        conversion_mgr = get_conversion_manager()
+        conversion_mgr.source_extension_filter_updated.connect(self.update_input_ext_filter_summary)
+        self.conversion_mgr = conversion_mgr
+
+        self.error_modal = None
+        self.file_search_progress_modal = None
+        self.input_ext_picker_modal = ExtensionPicker(conversion_mgr.get_file_search_filters())
+        self.input_ext_picker_modal.request_extension_updated.connect(self.handle_input_extensions_update_request)
+
+        self.setWindowTitle('Batch Image Converter (Step 1/3)')
         layout = QVBoxLayout()
         self.setLayout(layout)
 
@@ -379,10 +489,13 @@ class Wizard1PickFiles(QWidget):
         task_area.addLayout(src_folder_controls)
         # ....
         pick_src_folder_btn = QPushButton('Pick Folder')
-        # pick_src_folder_btn.clicked.connect(self.handle_choose_source_path)
+        pick_src_folder_btn.clicked.connect(self.handle_choose_source_path)
         src_folder_controls.addWidget(pick_src_folder_btn)
         src_folder_controls.addStretch()
         self.pick_src_folder_btn = pick_src_folder_btn
+
+        # TODO refactor
+        self.target_paths_model = get_target_paths_model()
 
         # Set up the files table
         targets_view = QTableView()
@@ -397,8 +510,35 @@ class Wizard1PickFiles(QWidget):
         vert_header = targets_view.verticalHeader()
         vert_header.setSectionResizeMode(QHeaderView.Fixed)
         # ....
-        layout.addWidget(targets_view)
+        task_area.addWidget(targets_view)
         self.targets_view = targets_view
+
+        # Add a settings area
+        settings_area = QVBoxLayout()
+        settings_box = QGroupBox('File Search Settings:')
+        settings_box.setLayout(settings_area)
+        task_area.addWidget(settings_box)
+        # ....
+        # Set up a source-filetypes summary and controls
+        src_formats_header = QHBoxLayout()
+        settings_area.addLayout(src_formats_header)
+        # Set up the source-filetypes extension picker header
+        src_extensions_header = QHBoxLayout()
+        src_extensions_header.addWidget(QLabel('Selected Filetypes:'))
+        settings_area.addLayout(src_extensions_header)
+        src_extensions_summary = QLabel()
+        src_extensions_header.addWidget(src_extensions_summary)
+        src_extensions_header.addStretch()
+        self.src_extensions_summary = src_extensions_summary
+        self.update_input_ext_filter_summary()  # Shows a list of selected extensions
+        # Set up the extensions picker controls
+        src_ext_picker_controls = QHBoxLayout()
+        settings_area.addLayout(src_ext_picker_controls)
+        src_ext_picker_btn = QPushButton('Pick Filetypes')
+        src_ext_picker_btn.clicked.connect(self.handle_input_ext_picker_clicked)
+        src_ext_picker_controls.addWidget(src_ext_picker_btn)
+        src_ext_picker_controls.addStretch()
+        self.extension_picker_btn = src_ext_picker_btn
 
         # Size the widget after adding stuff to the layout
         self.resize(800, 600)  # Resize children (if needed) below this line
@@ -407,9 +547,109 @@ class Wizard1PickFiles(QWidget):
         # Auto show() the widget!
         self.show()
 
+    def handle_source_path_updated(self, path):
+        self.src_folder_lbl.setText(path)
+
     def handle_next_clicked(self):
         self.hide()
         self.request_next_step.emit()
+
+    def update_input_ext_filter_summary(self):
+        self.src_extensions_summary.setText(','.join(sorted([ext for ext, state in self.conversion_mgr.get_file_search_filters().items() if state])))
+
+    def handle_input_extensions_update_request(self, ext_name, check_state):
+        self.conversion_mgr.set_file_search_filter(ext_name, check_state)
+
+    def handle_input_extensions_updated(self):
+        self.update_input_ext_filter_summary()
+        self.input_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_search_filters())
+
+    def handle_input_ext_picker_clicked(self):
+        self.input_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_search_filters())
+        self.input_ext_picker_modal.show()
+
+    def show_error_message(self, message):
+        # Show a message popup (has an okay button only)
+        box = CustomModal('Error!', message, [QDialogButtonBox.Ok])
+
+        # Ok button should close the modal
+        ok_btn = box.button(QDialogButtonBox.Ok)
+        ok_btn.clicked.connect(box.close)
+
+        # Size and hold a reference to the window
+        box.resize(300, box.minimumSizeHint().height())
+        self.error_modal = box
+        box.show()
+
+    def show_conversion_task_stats(self):
+        manager = self.conversion_mgr
+
+        self.src_folder_lbl.setText(
+            f'({len(manager.get_target_paths()):,}) images in '
+            f'folder "{os.path.basename(manager.get_source_path())}"'
+        )
+
+    def set_folder_choose_cancel_flag(self):
+        # Set the cancel flag on the widget
+        self.file_search_progress_modal.disable_button(QDialogButtonBox.Cancel)
+        self.conversion_mgr.request_cancel_folder_open()
+
+    def handle_search_progress_popup_ok(self):
+        self.file_search_progress_modal.close()
+
+    def handle_choose_source_path(self):
+        manager = self.conversion_mgr
+
+        folder_path = QFileDialog.getExistingDirectory(self)
+        if folder_path:
+            folder_path = os.path.abspath(folder_path)
+        status = manager.set_source_path(folder_path)
+
+        if status == STATUS_OK:
+            self.src_folder_lbl.setText(os.path.basename(folder_path))
+        else:
+            if status == ERR_FOLDER_DOES_NOT_EXIST:
+                self.show_error_message('Error: Folder does not exist!')
+                return
+            if status == ERR_PATH_IS_NOT_FOLDER:
+                self.show_error_message('Error: Path is not a folder!')
+                return
+            if status == ERR_FOLDER_INVALID:
+                self.show_error_message('Error: Path is invalid!')
+                return
+
+        # Obtain the app, to perform manual UI updates
+        app = QApplication.instance()
+
+        # Show a progress popup
+        box = CustomModal('Finding files...', f'(0) matches\n(0) searched...')
+        box.set_buttons([QDialogButtonBox.Cancel, QDialogButtonBox.Ok])
+        # ....
+        cancel_btn = box.button(QDialogButtonBox.Cancel)
+        cancel_btn.clicked.connect(self.set_folder_choose_cancel_flag)
+        ok_btn = box.button(QDialogButtonBox.Ok)
+        ok_btn.clicked.connect(self.handle_search_progress_popup_ok)
+        box.disable_button(QDialogButtonBox.Ok)
+        box.resize(400, box.minimumSizeHint().height())  # TODO: Fix this
+        self.file_search_progress_modal = box
+        box.show()
+
+        app.processEvents()
+
+        # Start searching the disk for images at the specified location
+        result = manager.start_file_search()
+        if result['canceled']:
+            box.set_message('Image search was canceled')
+        else:
+            box.set_message(
+                f'Finished with {len(result["targets"])} images found, {len(result["errors"])} files with errors'
+            )  # TODO add total filecount
+        box.disable_button(QDialogButtonBox.Cancel)
+        box.enable_button(QDialogButtonBox.Ok)
+
+        # TODO restructure/simplify this
+        self.target_paths_model.set_new_data(manager.get_target_paths())
+        self.show_conversion_task_stats()
 
 
 class Wizard2ConversionSettings(QWidget):
@@ -420,7 +660,7 @@ class Wizard2ConversionSettings(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle('Batch Image Converter: Step 2')
+        self.setWindowTitle('Batch Image Converter (Step 2/3)')
         layout = QVBoxLayout()
         self.setLayout(layout)
 
@@ -429,19 +669,13 @@ class Wizard2ConversionSettings(QWidget):
         step_nav_box.setLayout(step_navigation_area)
         layout.addWidget(step_nav_box)
 
-        # step_nav_divider = QFrame()
-        # step_nav_divider.setFrameShadow(QFrame.Raised)
-        # step_nav_divider.setFrameShape(QFrame.HLine)
-        # step_nav_divider.setMidLineWidth(.5)
-        # layout.addWidget(step_nav_divider)
-
         back_btn = QPushButton('Back')
         back_btn.clicked.connect(self.handle_back_clicked)
         step_navigation_area.addWidget(back_btn)
         self.back_btn = back_btn
 
         step_navigation_area.addStretch()
-        step_navigation_area.addWidget(QLabel('Step 2: (Optional) Image Modifications'))
+        step_navigation_area.addWidget(QLabel('Step 2: (Optional) Image Modifiers'))
         step_navigation_area.addStretch()
 
         next_btn = QPushButton('Next')
@@ -456,7 +690,7 @@ class Wizard2ConversionSettings(QWidget):
         task_area.addWidget(QTextEdit())
 
         # Size the widget after adding stuff to the layout
-        self.resize(800, 600)  # Resize children (if needed) below this line
+        self.resize(800, self.sizeHint().height())  # Resize children (if needed) below this line
 
     def handle_back_clicked(self):
         self.hide()
@@ -475,6 +709,15 @@ class Wizard3SaveSettings(QWidget):
     def __init__(self):
         super().__init__()
 
+        # TODO refactor
+        conversion_mgr = get_conversion_manager()
+        conversion_mgr.output_path_updated.connect(self.handle_output_path_updated)
+        conversion_mgr.output_extension_filter_updated.connect(self.update_output_ext_filter_summary)
+        self.conversion_mgr = conversion_mgr
+
+        self.output_ext_picker_modal = ExtensionPicker(conversion_mgr.get_file_save_filters())
+        self.output_ext_picker_modal.request_extension_updated.connect(self.handle_output_extensions_update_request)
+
         self.setWindowTitle('Batch Image Converter: Step 3')
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -483,12 +726,6 @@ class Wizard3SaveSettings(QWidget):
         step_navigation_area = QHBoxLayout()
         step_nav_box.setLayout(step_navigation_area)
         layout.addWidget(step_nav_box)
-
-        # step_nav_divider = QFrame()
-        # step_nav_divider.setFrameShadow(QFrame.Raised)
-        # step_nav_divider.setFrameShape(QFrame.HLine)
-        # step_nav_divider.setMidLineWidth(.5)
-        # layout.addWidget(step_nav_divider)
 
         back_btn = QPushButton('Back')
         back_btn.clicked.connect(self.handle_back_clicked)
@@ -508,10 +745,77 @@ class Wizard3SaveSettings(QWidget):
         layout.addLayout(task_area)
         self.task_area = task_area
 
-        task_area.addWidget(QTextEdit())
+        # Set up output/save-as controls
+        output_settings_box = QGroupBox('File Save Settings:')
+        task_area.addWidget(output_settings_box)
+        output_settings_area = QVBoxLayout()
+        output_settings_box.setLayout(output_settings_area)
+        # ....
+        # Set up save-as extensions picker header
+        output_ext_picker_header = QHBoxLayout()
+        output_settings_area.addLayout(output_ext_picker_header)
+        output_ext_picker_header.addWidget(QLabel('Output Filetype(s):'))
+        output_filter_summary = QLabel()  # Shows a list of selected save-as/output extensions
+        output_ext_picker_header.addWidget(output_filter_summary)
+        output_ext_picker_header.addStretch()
+        self.output_filter_summary = output_filter_summary
+        self.update_output_ext_filter_summary()
+        # Set up the save-as extension picker controls
+        output_ext_picker_area = QHBoxLayout()
+        output_settings_area.addLayout(output_ext_picker_area)
+        output_ext_picker_btn = QPushButton('Pick Filetypes')
+        output_ext_picker_btn.clicked.connect(self.handle_output_ext_picker_clicked)
+        output_ext_picker_area.addWidget(output_ext_picker_btn)
+        output_ext_picker_area.addStretch()
+        self.output_ext_picker_btn = output_ext_picker_btn
+
+        # Add save-as/output folder picker controls
+        output_folder_picker_header = QHBoxLayout()
+        layout.addLayout(output_folder_picker_header)
+        output_folder_picker_header.addWidget(QLabel('Destination Folder:'))
+        # ....
+        output_folder_picker_lbl = QLabel()  # Shows the output folder
+        output_folder_picker_header.addWidget(output_folder_picker_lbl)
+        output_folder_picker_header.addStretch()
+        self.output_path_picker_lbl = output_folder_picker_lbl
+        # self.clear_output_path()  # TODO fix this
+        # ....
+        output_path_picker_controls = QHBoxLayout()
+        layout.addLayout(output_path_picker_controls)
+        output_path_picker_btn = QPushButton('Choose Folder')
+        output_path_picker_btn.clicked.connect(self.handle_choose_output_path)
+        output_path_picker_controls.addWidget(output_path_picker_btn)
+        output_path_picker_controls.addStretch()
+        self.output_path_picker_btn = output_path_picker_btn
 
         # Size the widget after adding stuff to the layout
-        self.resize(800, 600)  # Resize children (if needed) below this line
+        self.resize(800, self.sizeHint().height())  # Resize children (if needed) below this line
+
+    # TODO move this down
+    def handle_choose_output_path(self):
+        manager = self.conversion_mgr
+
+        folder_path = QFileDialog.getExistingDirectory(self)
+        if folder_path:
+            folder_path = os.path.abspath(folder_path)
+        status = manager.set_output_path(folder_path)
+
+        if status == STATUS_OK:
+            return
+        else:
+            output_path = os.path.abspath(folder_path)
+            if status == ERR_FOLDER_DOES_NOT_EXIST:
+                self.show_error_message('Error: Folder does not exist!')
+                return
+            if status == ERR_PATH_IS_NOT_FOLDER:
+                self.show_error_message('Error: Path is not a folder!')
+                return
+            if status == ERR_FOLDER_INVALID:
+                self.show_error_message('Error: Path is invalid!')
+                return
+
+    def handle_output_path_updated(self):
+        self.output_path_picker_lbl.setText(os.path.basename(self.conversion_mgr.get_output_path()))
 
     def handle_back_clicked(self):
         self.hide()
@@ -520,6 +824,20 @@ class Wizard3SaveSettings(QWidget):
     def handle_next_clicked(self):
         self.hide()
         self.request_next_step.emit()
+
+    def handle_output_ext_picker_clicked(self):
+        self.output_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_save_filters())
+        self.output_ext_picker_modal.show()
+
+    def handle_output_extensions_update_request(self, ext_name, check_state):
+        self.conversion_mgr.set_file_save_filter(ext_name, check_state)
+
+    def handle_output_extensions_updated(self):
+        self.update_output_ext_filter_summary()
+        self.output_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_save_filters())
+
+    def update_output_ext_filter_summary(self):
+        self.output_filter_summary.setText(','.join(sorted([ext for ext, state in self.conversion_mgr.get_file_save_filters().items() if state])))
 
 
 class CustomModal(QWidget):
@@ -574,7 +892,7 @@ class CustomModal(QWidget):
         btn.setEnabled(False)
 
 
-class HomeWindow(QWidget):  # TODO renaming/step4
+class Wizard4SummaryScreen(QWidget):  # TODO renaming/step4
     """Batch image converter home widget"""
 
     request_last_step = Signal()
@@ -583,8 +901,13 @@ class HomeWindow(QWidget):  # TODO renaming/step4
         super().__init__()
 
         # Set up a conversion data/handling object
-        conversion_mgr = ConversionManager()
+        conversion_mgr = get_conversion_manager()
+        conversion_mgr.source_extension_filter_updated.connect(self.update_input_ext_filter_summary)
+        conversion_mgr.output_extension_filter_updated.connect(self.update_output_ext_filter_summary)
         conversion_mgr.file_search_progress.connect(self.handle_file_search_progress)
+        conversion_mgr.file_save_progress.connect(self.handle_file_save_progress)
+        conversion_mgr.source_path_updated.connect(self.handle_source_path_updated)
+        conversion_mgr.output_path_updated.connect(self.handle_output_path_updated)
         self.conversion_mgr = conversion_mgr
 
         # Set some initial widget properties
@@ -597,12 +920,6 @@ class HomeWindow(QWidget):  # TODO renaming/step4
         step_nav_box.setLayout(step_navigation_area)
         layout.addWidget(step_nav_box)
 
-        # step_nav_divider = QFrame()
-        # step_nav_divider.setFrameShadow(QFrame.Raised)
-        # step_nav_divider.setFrameShape(QFrame.HLine)
-        # step_nav_divider.setMidLineWidth(.5)
-        # layout.addWidget(step_nav_divider)
-
         back_btn = QPushButton('Back')
         back_btn.clicked.connect(self.handle_back_clicked)
         step_navigation_area.addWidget(back_btn)
@@ -611,15 +928,19 @@ class HomeWindow(QWidget):  # TODO renaming/step4
         step_navigation_area.addStretch()
         step_navigation_area.addWidget(QLabel('Summary/Launch Screen'))
         step_navigation_area.addStretch()
-        step_navigation_area.addSpacing(back_btn.sizeHint().width())
+
+        launch_btn = QPushButton('Start Conversion!')
+        launch_btn.clicked.connect(self.handle_convert)
+        step_navigation_area.addWidget(launch_btn)
 
         # Hold child modal widgets here
         self.error_modal = None
         self.input_ext_picker_modal = ExtensionPicker(conversion_mgr.get_file_search_filters())
-        self.input_ext_picker_modal.request_extension_updated.connect(self.handle_input_extensions_updated)
+        self.input_ext_picker_modal.request_extension_updated.connect(self.handle_input_extensions_update_request)
         self.output_ext_picker_modal = ExtensionPicker(conversion_mgr.get_file_save_filters())
-        self.output_ext_picker_modal.request_extension_updated.connect(self.handle_output_extensions_updated)
+        self.output_ext_picker_modal.request_extension_updated.connect(self.handle_output_extensions_update_request)
         self.file_search_progress_modal = None
+        self.file_save_progress_modal = None
 
         # Store the MVC model for the discovered files the users wants to convert
         target_paths_model = get_target_paths_model()  # TODO Fix/refactor/move/finish
@@ -633,7 +954,7 @@ class HomeWindow(QWidget):  # TODO renaming/step4
         src_folder_lbl = QLabel()
         src_folder_header.addWidget(src_folder_lbl)
         self.src_folder_lbl = src_folder_lbl
-        self.clear_selected_path()
+        self.handle_path_cleared()
         # ....
         src_folder_controls = QHBoxLayout()
         layout.addLayout(src_folder_controls)
@@ -719,7 +1040,7 @@ class HomeWindow(QWidget):  # TODO renaming/step4
         output_ext_picker_header.addWidget(output_filter_summary)
         output_ext_picker_header.addStretch()
         self.output_filter_summary = output_filter_summary
-        self.update_output_ext_summary()
+        self.update_output_ext_filter_summary()
         # Set up the save-as extension picker controls
         output_ext_picker_area = QHBoxLayout()
         output_settings_area.addLayout(output_ext_picker_area)
@@ -768,14 +1089,19 @@ class HomeWindow(QWidget):  # TODO renaming/step4
         self.hide()
         self.request_last_step.emit()
 
-    def clear_selected_path(self):
+    def handle_source_path_updated(self, path):
+        self.src_folder_lbl.setText(path)
+
+    def handle_path_cleared(self):
+        # Reset the UI
+        manager = self.conversion_mgr
+        self.src_folder_lbl.setText('(No Folder Selected)')
+        self.target_paths_model.set_new_data(manager.get_target_paths())
+
+    def user_clear_selected_path(self):
         # Clear data
         manager = self.conversion_mgr
         manager.clear_source_path()
-
-        # Reset the UI
-        self.src_folder_lbl.setText('(No Folder Selected)')
-        self.target_paths_model.set_new_data(manager.get_target_paths())
 
     def clear_output_path(self):
         # Clear data
@@ -808,7 +1134,7 @@ class HomeWindow(QWidget):  # TODO renaming/step4
         status = manager.set_output_path(folder_path)
 
         if status == STATUS_OK:
-            self.output_path_picker_lbl.setText(os.path.basename(folder_path))
+            return
         else:
             output_path = os.path.abspath(folder_path)
             if status == ERR_FOLDER_DOES_NOT_EXIST:
@@ -821,14 +1147,20 @@ class HomeWindow(QWidget):  # TODO renaming/step4
                 self.show_error_message('Error: Path is invalid!')
                 return
 
+    def handle_output_path_updated(self):
+        self.output_path_picker_lbl.setText(os.path.basename(self.conversion_mgr.get_output_path()))
+
     def handle_file_search_progress(self, match_count, search_count):
         """Handle intermittent file search progress updates, refresh the UI"""
         popup = self.file_search_progress_modal
         popup.set_message(f'({match_count:,}) matches\n({search_count:,}) searched...')
         QApplication.instance().processEvents()
 
-    def handle_progress_popup_ok(self):
+    def handle_search_progress_popup_ok(self):
         self.file_search_progress_modal.close()
+
+    def handle_save_progress_popup_ok(self):
+        self.file_save_progress_modal.close()
 
     def handle_choose_source_path(self):
         manager = self.conversion_mgr
@@ -861,7 +1193,7 @@ class HomeWindow(QWidget):  # TODO renaming/step4
         cancel_btn = box.button(QDialogButtonBox.Cancel)
         cancel_btn.clicked.connect(self.set_folder_choose_cancel_flag)
         ok_btn = box.button(QDialogButtonBox.Ok)
-        ok_btn.clicked.connect(self.handle_progress_popup_ok)
+        ok_btn.clicked.connect(self.handle_search_progress_popup_ok)
         box.disable_button(QDialogButtonBox.Ok)
         box.resize(400, box.minimumSizeHint().height())  # TODO: Fix this
         self.file_search_progress_modal = box
@@ -876,7 +1208,7 @@ class HomeWindow(QWidget):  # TODO renaming/step4
             box.set_message('Image search was canceled')
         else:
             box.set_message(
-                f'Finished with {len(result["matches"])} images found, {len(result["errors"])} files with errors'
+                f'Finished with {len(result["targets"])} images found, {len(result["errors"])} files with errors'
             )  # TODO add total filecount
         box.disable_button(QDialogButtonBox.Cancel)
         box.enable_button(QDialogButtonBox.Ok)
@@ -895,80 +1227,82 @@ class HomeWindow(QWidget):  # TODO renaming/step4
 
         # Size and hold a reference to the window
         box.resize(300, box.minimumSizeHint().height())
-        self.file_search_progress_modal = box
+        self.error_modal = box
         box.show()
 
     def get_extension_matcher(self, extension):
         if extension.lower() in {}:
             return
 
+    def handle_file_save_progress(self, upcoming_filename, source_files_handled, total_count):
+        """Handle intermittent file search progress updates, refresh the UI"""
+        popup = self.file_save_progress_modal
+        popup.set_message(f'Writing {upcoming_filename}\nFinished ({source_files_handled})/({total_count})')
+        popup.progress_bar.setValue(source_files_handled)
+        QApplication.instance().processEvents()
+
     def handle_convert(self):
         manager = self.conversion_mgr
-        user_folder = manager.get_source_path()
 
-        # For each image file, try to open the image, process, and save it
-        for image_path, metadata in manager.get_target_paths().items():
-            try:
-                user_image = Image.open(image_path)
-            except OSError as err:
-                metadata['errors'].append({ERR_IMAGE_OPEN: True})  # TODO encapsulate this >>>>>
-                traceback.print_exc()
-                print(f'[py_img_batcher] Error opening {image_path}, skipping...')
+        # Obtain the app, to perform manual UI updates
+        app = QApplication.instance()
 
-                continue
+        # Show a progress popup
+        box = CustomModal('Saving files...', f'Saved ()/()')
+        box.set_buttons([QDialogButtonBox.Cancel, QDialogButtonBox.Ok])
+        # ....
+        cancel_btn = box.button(QDialogButtonBox.Cancel)
+        cancel_btn.clicked.connect(self.set_save_cancel_flag)
+        ok_btn = box.button(QDialogButtonBox.Ok)
+        ok_btn.clicked.connect(self.handle_save_progress_popup_ok)
+        box.disable_button(QDialogButtonBox.Ok)
+        progress_bar = QProgressBar()
+        progress_bar.setMinimum(0)
+        progress_bar.setMaximum(len(manager.get_target_paths()))
+        box.progress_bar = progress_bar
+        box.layout().insertWidget(1, progress_bar)
+        box.resize(400, box.minimumSizeHint().height())
+        self.file_save_progress_modal = box
+        box.show()
+        # TODO handle popup close
 
-            # For each desired save file, write a file
-            for output_ext in [ext for ext, val in manager.get_file_save_filters().items() if val]:
-                try:
-                    output_path = self.get_safe_output_path(image_path, output_ext)
-                    print('OUTPUT')
-                    print(output_path)
-                    user_image.save(output_path)
-                except OSError:
-                    metadata['errors'].append({ERR_IMAGE_SAVE: output_ext})
-                    traceback.print_exc()
-                    print(f'[py_img_batcher] Error saving {image_path}, skipping...')
+        app.processEvents()
 
-                    continue
-                # except ImageBatcherException as err:  # TODO handle this properly
-                except Exception as err:
-                    metadata['errors'].append({'unknown error': output_ext})
-                    traceback.print_exc()
-                    print(f'[py_img_batcher] Unknown error for {image_path} / {output_ext}, skipping...')
+        # Start converting/saving output images
+        result = manager.start_conversion()
+        if result['canceled']:
+            box.set_message('Image conversion was canceled')
+        else:
+            box.set_message(
+                f'Finished with {len(result["targets"])} input images processed, {len(result["errors"])} files with errors'
+            )  # TODO add total filecount
+        box.disable_button(QDialogButtonBox.Cancel)
+        box.enable_button(QDialogButtonBox.Ok)
 
-                    continue
+        print(f'Finished with {sum([len(val["errors"]) for item, val in manager.get_target_paths().items()])} errors')
 
-        print(f'Finished with {sum([len(val["errors"]) for item, val in self.target_paths.items()])} errors')
-
-    def get_safe_output_path(self, src_path, extension):
-        base_name = os.path.basename(os.path.splitext(src_path)[0])
-
-        name_attempt_counter = -1
-        current_name = os.path.join(self.output_path, f'{base_name}.{extension}')
-
-        while os.path.exists(current_name):
-            print(f'File {current_name} already exists, attempting new name...')
-            name_attempt_counter += 1
-            current_name = os.path.join(self.output_path, f'{base_name}.{name_attempt_counter:0>4}.{extension}')
-
-            if name_attempt_counter == 10000:
-                raise Exception('Error obtaining non-duplicate name')
-
-        return current_name
+    def set_save_cancel_flag(self):
+        self.conversion_mgr.request_cancel_save()
 
     def update_input_ext_filter_summary(self):
         self.src_extensions_summary.setText(','.join(sorted([ext for ext, state in self.conversion_mgr.get_file_search_filters().items() if state])))
 
-    def update_output_ext_summary(self):
+    def update_output_ext_filter_summary(self):
         self.output_filter_summary.setText(','.join(sorted([ext for ext, state in self.conversion_mgr.get_file_save_filters().items() if state])))
 
-    def handle_input_extensions_updated(self, ext_name, check_state):
-        self.conversion_mgr.get_file_search_filters()[ext_name] = check_state
-        self.update_input_ext_filter_summary()
+    def handle_input_extensions_update_request(self, ext_name, check_state):
+        self.conversion_mgr.set_file_search_filter(ext_name, check_state)
 
-    def handle_output_extensions_updated(self, ext_name, check_state):
-        self.conversion_mgr.get_file_save_filters()[ext_name] = check_state
-        self.update_output_ext_summary()
+    def handle_input_extensions_updated(self):
+        self.update_input_ext_filter_summary()
+        self.input_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_search_filters())
+
+    def handle_output_extensions_update_request(self, ext_name, check_state):
+        self.conversion_mgr.set_file_save_filter(ext_name, check_state)
+
+    def handle_output_extensions_updated(self):
+        self.update_output_ext_filter_summary()
+        self.output_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_save_filters())
 
     def handle_input_ext_picker_clicked(self):
         self.input_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_search_filters())
@@ -993,7 +1327,7 @@ def run_gui():
     wizard_step1 = Wizard1PickFiles()
     wizard_step2 = Wizard2ConversionSettings()
     wizard_step3 = Wizard3SaveSettings()
-    wizard_step4 = HomeWindow()
+    wizard_step4 = Wizard4SummaryScreen()
 
     wizard_step1.request_next_step.connect(wizard_step2.show)
 
