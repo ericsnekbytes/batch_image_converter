@@ -16,28 +16,12 @@ from PySide6.QtCore import Qt, Signal, QAbstractTableModel, QObject
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, QPushButton,
                                QHBoxLayout)
 
+# TODO package refactor
+from constants import (EXT_BMP, EXT_GIF, EXT_JPG, EXT_PNG, EXT_TIFF, EXT_WEBP, EXT_MATCHERS,
+                       EXTENSIONS, ERR_IMAGE_OPEN, ERR_IMAGE_SAVE, STATUS_OK, ERR_FOLDER_INVALID,
+                       ERR_FOLDER_DOES_NOT_EXIST, ERR_PATH_IS_NOT_FOLDER)
 
-EXT_BMP = 'bmp'
-EXT_GIF = 'gif'
-EXT_JPG = 'jpg'
-EXT_PNG = 'png'
-EXT_TIFF = 'tiff'
-EXT_WEBP = 'webp'
-EXT_MATCHERS = {
-    EXT_BMP: re.compile(r'bmp', flags=re.IGNORECASE),
-    EXT_GIF: re.compile(r'gif', flags=re.IGNORECASE),
-    EXT_JPG: re.compile(r'(jpg|jpeg)', flags=re.IGNORECASE),
-    EXT_PNG: re.compile(r'png', flags=re.IGNORECASE),
-    EXT_TIFF: re.compile(r'(tif|tiff)', flags=re.IGNORECASE),
-    EXT_WEBP: re.compile(r'webp', flags=re.IGNORECASE),
-}
-EXTENSIONS = set(EXT_MATCHERS)
-ERR_IMAGE_OPEN = 'ERR_IMAGE_OPEN'
-ERR_IMAGE_SAVE = 'ERR_IMAGE_SAVE'
-STATUS_OK = 0
-ERR_FOLDER_INVALID = 1
-ERR_FOLDER_DOES_NOT_EXIST = 1 << 1
-ERR_PATH_IS_NOT_FOLDER = 1 << 2
+
 # Move this to models module
 _TARGET_PATHS_MODEL = None
 def get_target_paths_model():
