@@ -56,7 +56,6 @@ class ExtensionPicker(QWidget):
     request_extension_updated = Signal(str, bool)
 
     def __init__(self, initial_values, parent=None):
-        # initial_values format is {'png': False} format, for all keys in EXTENSIONS
         super().__init__()
 
         # Holds extension checkbox controls
