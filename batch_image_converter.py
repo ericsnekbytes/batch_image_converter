@@ -8,6 +8,7 @@ import random
 import re
 import sys
 import traceback
+# from multiprocessing import Process, Queue
 
 from PIL import Image
 from PySide6.QtWidgets import QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox, QMessageBox, \
@@ -19,7 +20,7 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, QP
 # TODO package refactor
 from constants import (EXT_BMP, EXT_GIF, EXT_JPG, EXT_PNG, EXT_TIFF, EXT_WEBP, EXT_MATCHERS,
                        EXTENSIONS, ERR_IMAGE_OPEN, ERR_IMAGE_SAVE, STATUS_OK, ERR_FOLDER_INVALID,
-                       ERR_FOLDER_DOES_NOT_EXIST, ERR_PATH_IS_NOT_FOLDER)
+                       ERR_FOLDER_DOES_NOT_EXIST, ERR_PATH_IS_NOT_FOLDER, ERRORS, OUTPUTS, TARGETS, CANCELED)
 
 
 # Move this to models module
@@ -35,6 +36,10 @@ def get_conversion_manager():
     if _CONVERSION_MANAGER is None:
         _CONVERSION_MANAGER = ConversionManager()
     return _CONVERSION_MANAGER
+
+
+def new_file_metadata():
+    return {ERRORS: [], OUTPUTS: []}
 
 
 class ImageBatcherException(Exception):
@@ -283,9 +288,9 @@ class ConversionManager(QObject):
                         # Abort if needed
                         self.clear_source_path()  # TODO be consistent when clearing
                         return {
-                            'targets': target_paths,
-                            'errors': [],
-                            'canceled': True,
+                            TARGETS: target_paths,
+                            ERRORS: [],
+                            CANCELED: True,
                         }
 
             for fname in filenames:
@@ -299,12 +304,12 @@ class ConversionManager(QObject):
                         break
 
                 if extension_matched:  # TODO dict schema, refactor/move
-                    target_paths[filepath] = {'errors': [], 'outputs': []}  # Add a metadata dict for this file
+                    target_paths[filepath] = new_file_metadata()  # Add a metadata dict for this file
 
         return {
-            'targets': target_paths,
-            'errors': [key for key, val in target_paths.items() if val['errors']],
-            'canceled': self.cancel_folder_open_flag,
+            TARGETS: target_paths,
+            ERRORS: [key for key, val in target_paths.items() if val[ERRORS]],
+            CANCELED: self.cancel_folder_open_flag,
         }
 
     def clear_source_path(self):
@@ -381,15 +386,15 @@ class ConversionManager(QObject):
 
                 # Abort if needed
                 return {
-                    'targets': self.target_paths,
-                    'errors': [],
-                    'canceled': True,
+                    TARGETS: self.target_paths,
+                    ERRORS: [],
+                    CANCELED: True,
                 }
 
             try:
                 user_image = Image.open(image_path)
             except OSError as err:
-                metadata['errors'].append({ERR_IMAGE_OPEN: True})  # TODO encapsulate this >>>>>
+                metadata[ERRORS].append({ERR_IMAGE_OPEN: True})  # TODO encapsulate this >>>>>
                 traceback.print_exc()
                 print(f'[py_img_batcher] Error opening {image_path}, skipping...')
 
@@ -408,17 +413,17 @@ class ConversionManager(QObject):
                         print(f'[py_img_batcher] Resizing to {new_size}')
                         user_image = user_image.resize(new_size)
                     user_image.save(output_path)
-                    metadata['outputs'].append({output_path: True})  # TODO update UI
+                    metadata[OUTPUTS].append({output_path: True})  # TODO update UI
                     images_written = True
                 except OSError:
-                    metadata['errors'].append({ERR_IMAGE_SAVE: output_ext})
+                    metadata[ERRORS].append({ERR_IMAGE_SAVE: output_ext})
                     traceback.print_exc()
                     print(f'[py_img_batcher] Error saving {image_path}, skipping...')
 
                     continue
                 # except ImageBatcherException as err:  # TODO handle this properly
                 except Exception as err:
-                    metadata['errors'].append({'unknown error': output_ext})
+                    metadata[ERRORS].append({'unknown error': output_ext})
                     traceback.print_exc()
                     print(f'[py_img_batcher] Unknown error for {image_path} / {output_ext}, skipping...')
 
@@ -431,9 +436,9 @@ class ConversionManager(QObject):
         # TODO handle degenerate cases/0 files, no dest folder etc.
         self.file_save_progress.emit(image_path, source_files_handled, len(self.target_paths))  # TODO refactor
         return {
-            'targets': self.target_paths,
-            'errors': [key for key, val in self.target_paths.items() if val['errors']],
-            'canceled': self.cancel_save_flag,
+            TARGETS: self.target_paths,
+            ERRORS: [key for key, val in self.target_paths.items() if val[ERRORS]],
+            CANCELED: self.cancel_save_flag,
         }
 
 
@@ -668,11 +673,11 @@ class WizardPickFiles(QWidget):
 
         # Start searching the disk for images at the specified location
         result = manager.start_file_search()
-        if result['canceled']:
+        if result[CANCELED]:
             box.set_message('Image search was canceled')
         else:
             box.set_message(
-                f'Finished with {len(result["targets"])} images found, {len(result["errors"])} files with errors'
+                f'Finished with {len(result[TARGETS])} images found, {len(result[ERRORS])} files with errors'
             )  # TODO add total filecount
         box.disable_button(QDialogButtonBox.Cancel)
         box.enable_button(QDialogButtonBox.Ok)
@@ -1296,11 +1301,11 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
 
         # Start searching the disk for images at the specified location
         result = manager.start_file_search()
-        if result['canceled']:
+        if result[CANCELED]:
             box.set_message('Image search was canceled')
         else:
             box.set_message(
-                f'Finished with {len(result["targets"])} images found, {len(result["errors"])} files with errors'
+                f'Finished with {len(result[TARGETS])} images found, {len(result[ERRORS])} files with errors'
             )  # TODO add total filecount
         box.disable_button(QDialogButtonBox.Cancel)
         box.enable_button(QDialogButtonBox.Ok)
@@ -1374,16 +1379,16 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
 
         # Start converting/saving output images
         result = manager.start_conversion()
-        if result['canceled']:
+        if result[CANCELED]:
             box.set_message('Image conversion was canceled')
         else:
             box.set_message(
-                f'Finished with {len(result["targets"])} input images processed, {len(result["errors"])} files with errors'
+                f'Finished with {len(result["targets"])} input images processed, {len(result[ERRORS])} files with errors'
             )  # TODO add total filecount
         box.disable_button(QDialogButtonBox.Cancel)
         box.enable_button(QDialogButtonBox.Ok)
 
-        print(f'Finished with {sum([len(val["errors"]) for item, val in manager.get_target_paths().items()])} errors')
+        print(f'Finished with {sum([len(val[ERRORS]) for item, val in manager.get_target_paths().items()])} errors')
 
     def set_save_cancel_flag(self):
         self.conversion_mgr.request_cancel_save()
