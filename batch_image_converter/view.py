@@ -12,8 +12,8 @@ import traceback
 from PIL import Image
 from PySide6.QtWidgets import (QLabel, QSlider, QFileDialog, QCheckBox, QGroupBox,
                                QTableView, QHeaderView, QDialogButtonBox,
-                               QProgressBar, QSplitter)
-from PySide6.QtCore import Qt, Signal
+                               QProgressBar, QSplitter, QSizePolicy)
+from PySide6.QtCore import Qt, Signal, QObject
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,
                                QHBoxLayout)
 
@@ -27,8 +27,8 @@ from batch_image_converter.model import (get_conversion_manager, get_target_path
 
 class ImageBatcherException(Exception):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args):
+        super().__init__(*args)
 
         self.code = None
 
@@ -88,6 +88,53 @@ class ExtensionPicker(QWidget):
         self.hide()
 
 
+class SourcePicker(QWidget):
+    """Holds controls for selecting a source widget"""
+
+    request_choose_src_folder = Signal()
+
+    def __init__(self):
+        super().__init__()
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
+
+        src_folder_box = QGroupBox('Search Folder:')
+        src_folder_area = QVBoxLayout()
+        src_folder_box.setLayout(src_folder_area)
+        layout.addWidget(src_folder_box)
+        self.src_folder_box = src_folder_box
+
+        src_folder_controls = QHBoxLayout()
+        src_folder_area.addLayout(src_folder_controls)
+
+        pick_src_folder_btn = QPushButton('Pick Folder')
+        pick_src_folder_btn.clicked.connect(self.handle_pick_folder_clicked)
+        src_folder_controls.addWidget(pick_src_folder_btn)
+        self.pick_src_folder_btn = pick_src_folder_btn
+
+        src_folder_lbl = QLabel()
+        src_folder_lbl.setMinimumWidth(1)
+        src_folder_controls.addWidget(src_folder_lbl)
+        src_folder_controls.addStretch()
+        self.src_folder_lbl = src_folder_lbl
+
+        self.clear_source_path_summary()
+
+    def clear_source_path_summary(self):
+        self.src_folder_lbl.setText('(Empty) Select a folder with some images')
+
+    def handle_pick_folder_clicked(self):
+        self.request_choose_src_folder.emit()
+
+    def handle_source_folder_updated(self, path, targets):
+        self.src_folder_lbl.setText(
+            f'({len(targets):,} images) in '
+            f'"{os.path.basename(path)}" ({path})'
+        )
+
+
 class WizardPickFiles(QWidget):
 
     request_next_step = Signal()
@@ -139,30 +186,11 @@ class WizardPickFiles(QWidget):
         settings_container = QSplitter()
         task_area.addWidget(settings_container)
 
-        # Add user controls for choosing a folder to convert
-        src_folder_box = QGroupBox('Search Folder:')
-        src_folder_area = QVBoxLayout()
-        src_folder_box.setLayout(src_folder_area)
-        settings_container.addWidget(src_folder_box)
-        src_folder_header = QHBoxLayout()
-        src_folder_area.addLayout(src_folder_header)
-        # src_folder_header.addWidget(QLabel('Select a folder with some images'))
-        src_folder_lbl = QLabel()
-        src_folder_lbl.setMinimumWidth(1)
-        src_folder_header.addStretch()
-        self.src_folder_lbl = src_folder_lbl
-        self.clear_source_path_summary()
-        # self.clear_selected_path()  # TODO Fix/refactor
-        # ....
-        src_folder_controls = QHBoxLayout()
-        src_folder_area.addLayout(src_folder_controls)
-        # ....
-        pick_src_folder_btn = QPushButton('Pick Folder')
-        pick_src_folder_btn.clicked.connect(self.handle_choose_source_path)
-        src_folder_controls.addWidget(pick_src_folder_btn)
-        src_folder_controls.addWidget(src_folder_lbl)
-        src_folder_controls.addStretch()
-        self.pick_src_folder_btn = pick_src_folder_btn
+        source_folder_picker = SourcePicker()
+        source_folder_picker.request_choose_src_folder.connect(self.handle_choose_source_path)
+        conversion_mgr.source_path_updated.connect(source_folder_picker.handle_source_folder_updated)
+        settings_container.addWidget(source_folder_picker)
+        self.source_folder_picker = source_folder_picker
 
         # Add a settings area
         settings_area = QVBoxLayout()
@@ -216,12 +244,6 @@ class WizardPickFiles(QWidget):
         # Auto show() the widget!
         self.show()
 
-    def clear_source_path_summary(self):
-        self.src_folder_lbl.setText('(Empty) Select a folder with some images')
-
-    def handle_source_path_updated(self, path):
-        self.src_folder_lbl.setText(path)
-
     def handle_next_clicked(self):
         self.hide()
         self.request_next_step.emit()
@@ -253,13 +275,13 @@ class WizardPickFiles(QWidget):
         self.error_modal = box
         box.show()
 
-    def show_conversion_task_stats(self):
+    def show_source_folder_stats(self):
         manager = self.conversion_mgr
         source_path = manager.get_source_path()
 
-        self.src_folder_lbl.setText(
-            f'({len(manager.get_target_paths()):,} images) in '
-            f'"{os.path.basename(source_path)}" ({source_path})'
+        self.source_folder_picker.handle_source_folder_updated(
+            source_path,
+            manager.get_target_paths()
         )
 
     def set_folder_choose_cancel_flag(self):
@@ -285,9 +307,7 @@ class WizardPickFiles(QWidget):
             folder_path = os.path.abspath(folder_path)
         status = manager.set_source_path(folder_path)
 
-        if status == STATUS_OK:
-            self.src_folder_lbl.setText(os.path.basename(folder_path))
-        else:
+        if status != STATUS_OK:
             if status == ERR_FOLDER_DOES_NOT_EXIST:
                 self.show_error_message('Error: Folder does not exist!')
                 return
@@ -330,7 +350,7 @@ class WizardPickFiles(QWidget):
 
         # TODO restructure/simplify this
         self.target_paths_model.set_new_data(manager.get_target_paths())
-        self.show_conversion_task_stats()
+        self.show_source_folder_stats()
 
 
 class WizardConversionSettings(QWidget):
@@ -631,7 +651,6 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         conversion_mgr.output_extension_filter_updated.connect(self.update_output_ext_filter_summary)
         conversion_mgr.file_search_progress.connect(self.handle_file_search_progress)
         conversion_mgr.file_save_progress.connect(self.handle_file_save_progress)
-        conversion_mgr.source_path_updated.connect(self.handle_source_path_updated)
         conversion_mgr.output_path_updated.connect(self.handle_output_path_updated)
         conversion_mgr.modifier_scale_updated.connect(self.handle_scale_updated)
         self.conversion_mgr = conversion_mgr
@@ -673,32 +692,15 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         target_paths_model.set_new_data(conversion_mgr.get_target_paths())
         self.target_paths_model = target_paths_model
 
+        # TODO refactor settings_container
         settings_container = QSplitter()
         layout.addWidget(settings_container)
 
-        # Add user controls for choosing a folder to convert
-        src_folder_box = QGroupBox('Search Folder:')
-        src_folder_area = QVBoxLayout()
-        src_folder_box.setLayout(src_folder_area)
-        settings_container.addWidget(src_folder_box)
-        # src_folder_header = QHBoxLayout()
-        # layout.addLayout(src_folder_header)
-        # src_folder_header.addWidget(QLabel('Selected Folder:'))  # TODO remove
-        src_folder_lbl = QLabel()
-        # src_folder_header.addWidget(src_folder_lbl)
-        # src_folder_header.addStretch()
-        self.src_folder_lbl = src_folder_lbl
-        self.clear_source_path_summary()
-        # ....
-        src_folder_controls = QHBoxLayout()
-        src_folder_area.addLayout(src_folder_controls)
-        # ....
-        pick_src_folder_btn = QPushButton('Choose Folder')
-        pick_src_folder_btn.clicked.connect(self.handle_choose_source_path)
-        src_folder_controls.addWidget(pick_src_folder_btn)
-        src_folder_controls.addWidget(src_folder_lbl)
-        src_folder_controls.addStretch()
-        self.pick_src_folder_btn = pick_src_folder_btn
+        source_folder_picker = SourcePicker()
+        source_folder_picker.request_choose_src_folder.connect(self.handle_choose_source_path)
+        conversion_mgr.source_path_updated.connect(source_folder_picker.handle_source_folder_updated)
+        settings_container.addWidget(source_folder_picker)
+        self.source_folder_picker = source_folder_picker
 
         # Set up the files table
         targets_view = QTableView()
@@ -839,27 +841,16 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         self.hide()
         self.request_last_step.emit()
 
-    def handle_source_path_updated(self, path):
-        self.src_folder_lbl.setText(path)
-
-    def clear_source_path_summary(self):
-        self.src_folder_lbl.setText('(Empty) Select a folder with some images')
-
-    def user_clear_selected_path(self):
-        # Clear data
-        manager = self.conversion_mgr
-        manager.clear_source_path()
-
     def clear_output_path_summary(self):
         self.output_path_picker_lbl.setText('(Empty) Select a save folder')
 
-    def show_conversion_task_stats(self):
+    def show_source_folder_stats(self):
         manager = self.conversion_mgr
         source_path = manager.get_source_path()
 
-        self.src_folder_lbl.setText(
-            f'({len(manager.get_target_paths()):,} images) in '
-            f'"{os.path.basename(source_path)}" ({source_path})'
+        self.source_folder_picker.handle_source_folder_updated(
+            source_path,
+            manager.get_target_paths()
         )
 
     def set_folder_choose_cancel_flag(self):
@@ -906,6 +897,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         self.file_save_progress_modal.hide()
 
     def handle_choose_source_path(self):
+        # TODO: Deduplicate this with source folder picker wizard
         manager = self.conversion_mgr
 
         folder_path = QFileDialog.getExistingDirectory(self)
@@ -913,9 +905,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
             folder_path = os.path.abspath(folder_path)
         status = manager.set_source_path(folder_path)
 
-        if status == STATUS_OK:
-            self.src_folder_lbl.setText(os.path.basename(folder_path))
-        else:
+        if status != STATUS_OK:
             if status == ERR_FOLDER_DOES_NOT_EXIST:
                 self.show_error_message('Error: Folder does not exist!')
                 return
@@ -958,7 +948,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
 
         # TODO restructure/simplify this
         self.target_paths_model.set_new_data(manager.get_target_paths())
-        self.show_conversion_task_stats()
+        self.show_source_folder_stats()
 
     def show_error_message(self, message):
         # Show a message popup (has an okay button only)

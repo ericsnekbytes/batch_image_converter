@@ -130,7 +130,7 @@ class ConversionManager(QObject):
     file_search_progress = Signal(int, int)
     file_save_progress = Signal(str, int, int)
     ready_for_ui_events = Signal()
-    source_path_updated = Signal(str)
+    source_path_updated = Signal(str, object)
     output_path_updated = Signal(str)
     source_extension_filter_updated = Signal()
     output_extension_filter_updated = Signal()
@@ -186,7 +186,7 @@ class ConversionManager(QObject):
             self.clear_source_path()
             self.source_path = source_path
             self.conv_timestamp = datetime.datetime.now()
-            self.source_path_updated.emit(source_path)
+            self.source_path_updated.emit(source_path, self.get_target_paths())
             # self.source_path_picker_lbl.setText(os.path.basename(output_path))
             return STATUS_OK
         else:
