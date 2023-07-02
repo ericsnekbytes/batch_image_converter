@@ -16,8 +16,8 @@ from batch_image_converter.constants import (EXT_BMP, EXT_GIF, EXT_JPG, EXT_PNG,
                                              TARGETS, CANCELED)
 
 
-_TARGET_PATHS_MODEL = None
-_CONVERSION_MANAGER = None
+_TARGET_PATHS_MODEL = None  # Holds shared target paths model at runtime
+_CONVERSION_MANAGER = None  # Holds shared conversion manager at runtime
 
 
 def new_file_metadata():

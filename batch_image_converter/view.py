@@ -8,14 +8,13 @@ import random
 import re
 import sys
 import traceback
-# from multiprocessing import Process, Queue
 
 from PIL import Image
-from PySide6.QtWidgets import (QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox,
-                               QMessageBox, QTableView, QHeaderView, QStyleFactory, QDialog, QDialogButtonBox,
-                               QFrame, QProgressBar, QSplitter, QSizePolicy)
-from PySide6.QtCore import Qt, Signal, QAbstractTableModel, QObject
-from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, QPushButton,
+from PySide6.QtWidgets import (QLabel, QSlider, QFileDialog, QCheckBox, QGroupBox,
+                               QTableView, QHeaderView, QDialogButtonBox,
+                               QProgressBar, QSplitter)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,
                                QHBoxLayout)
 
 from batch_image_converter.constants import (EXT_BMP, EXT_GIF, EXT_JPG, EXT_PNG, EXT_TIFF, EXT_WEBP, EXT_MATCHERS,
@@ -1109,9 +1108,3 @@ def run_gui():
 
 if __name__ == '__main__':
     run_gui()
-
-
-
-
-
-
