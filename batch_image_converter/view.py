@@ -89,7 +89,7 @@ class ExtensionPicker(QWidget):
 
 
 class SourcePicker(QWidget):
-    """Holds controls for selecting a source widget"""
+    """Holds controls for selecting a source folder"""
 
     request_choose_src_folder = Signal()
 
@@ -131,6 +131,50 @@ class SourcePicker(QWidget):
     def handle_source_folder_updated(self, path, targets):
         self.src_folder_lbl.setText(
             f'({len(targets):,} images) in '
+            f'"{os.path.basename(path)}" ({path})'
+        )
+
+
+class OutputPicker(QWidget):
+    """Holds controls for selecting an output folder"""
+
+    request_choose_output_folder = Signal()
+
+    def __init__(self):
+        super().__init__()
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
+
+        output_folder_box = QGroupBox('Destination folder:')
+        output_folder_area = QVBoxLayout()
+        output_folder_box.setLayout(output_folder_area)
+        layout.addWidget(output_folder_box)
+
+        output_path_picker_controls = QHBoxLayout()
+        output_folder_area.addLayout(output_path_picker_controls)
+
+        output_path_picker_btn = QPushButton('Choose Folder')
+        output_path_picker_btn.clicked.connect(self.handle_pick_folder_clicked)
+        output_path_picker_controls.addWidget(output_path_picker_btn)
+        self.output_path_picker_btn = output_path_picker_btn
+
+        output_folder_lbl = QLabel()  # Shows the output folder
+        output_path_picker_controls.addWidget(output_folder_lbl)
+        output_path_picker_controls.addStretch()
+        self.output_folder_lbl = output_folder_lbl
+
+        self.clear_output_path_summary()  # TODO fix this
+
+    def clear_output_path_summary(self):
+        self.output_folder_lbl.setText('(Empty) Select a save folder')
+
+    def handle_pick_folder_clicked(self):
+        self.request_choose_output_folder.emit()
+
+    def handle_output_folder_updated(self, path):
+        self.output_folder_lbl.setText(
             f'"{os.path.basename(path)}" ({path})'
         )
 
@@ -444,7 +488,6 @@ class WizardSaveSettings(QWidget):
 
         # TODO refactor
         conversion_mgr = get_conversion_manager()
-        conversion_mgr.output_path_updated.connect(self.handle_output_path_updated)
         conversion_mgr.output_extension_filter_updated.connect(self.update_output_ext_filter_summary)
         self.conversion_mgr = conversion_mgr
 
@@ -481,30 +524,11 @@ class WizardSaveSettings(QWidget):
         settings_container = QSplitter()
         task_area.addWidget(settings_container)
 
-        # Add save-as/output folder picker controls
-        output_folder_box = QGroupBox('Destination folder:')
-        output_folder_area = QVBoxLayout()
-        output_folder_box.setLayout(output_folder_area)
-        settings_container.addWidget(output_folder_box)
-        # output_folder_picker_header = QHBoxLayout()
-        # output_folder_area.addLayout(output_folder_picker_header)
-        # output_folder_picker_header.addWidget(QLabel('Destination Folder:'))
-        # ....
-        output_folder_picker_lbl = QLabel()  # Shows the output folder
-        # output_folder_picker_header.addWidget(output_folder_picker_lbl)
-        # output_folder_picker_header.addStretch()
-        self.output_path_picker_lbl = output_folder_picker_lbl
-        # self.clear_output_path()  # TODO fix this
-        self.clear_output_path_summary()  # TODO fix this
-        # ....
-        output_path_picker_controls = QHBoxLayout()
-        output_folder_area.addLayout(output_path_picker_controls)
-        output_path_picker_btn = QPushButton('Choose Folder')
-        output_path_picker_btn.clicked.connect(self.handle_choose_output_path)
-        output_path_picker_controls.addWidget(output_path_picker_btn)
-        output_path_picker_controls.addWidget(output_folder_picker_lbl)
-        output_path_picker_controls.addStretch()
-        self.output_path_picker_btn = output_path_picker_btn
+        output_folder_picker = OutputPicker()
+        output_folder_picker.request_choose_output_folder.connect(self.handle_choose_output_path)
+        conversion_mgr.output_path_updated.connect(output_folder_picker.handle_output_folder_updated)
+        settings_container.addWidget(output_folder_picker)
+        self.output_folder_picker = output_folder_picker
 
         # Set up output/save-as controls
         output_settings_box = QGroupBox('Image Save Formats:')
@@ -651,7 +675,6 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         conversion_mgr.output_extension_filter_updated.connect(self.update_output_ext_filter_summary)
         conversion_mgr.file_search_progress.connect(self.handle_file_search_progress)
         conversion_mgr.file_save_progress.connect(self.handle_file_save_progress)
-        conversion_mgr.output_path_updated.connect(self.handle_output_path_updated)
         conversion_mgr.modifier_scale_updated.connect(self.handle_scale_updated)
         self.conversion_mgr = conversion_mgr
 
@@ -768,6 +791,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         self.scale_factor = scale_factor
         self.handle_scale_modifer_update_request(scale_factor.value())
 
+        # TODO refactor outputs_container/output_settings_box
         outputs_container = QSplitter()
         layout.addWidget(outputs_container)
 
@@ -795,30 +819,12 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         output_ext_picker_area.addStretch()
         self.output_ext_picker_btn = output_ext_picker_btn
 
-        # Add save-as/output folder picker controls
-        output_folder_box = QGroupBox('Destination folder:')
-        output_folder_area = QVBoxLayout()
-        output_folder_box.setLayout(output_folder_area)
-        outputs_container.addWidget(output_folder_box)
-        outputs_container.addWidget(output_settings_box)
-        # output_folder_picker_header = QHBoxLayout()
-        # output_folder_area.addLayout(output_folder_picker_header)
-        # output_folder_picker_header.addWidget(QLabel('Destination Folder:'))
-        # ....
-        output_folder_picker_lbl = QLabel()  # Shows the output folder
-        # output_folder_picker_header.addWidget(output_folder_picker_lbl)
-        # output_folder_picker_header.addStretch()
-        self.output_path_picker_lbl = output_folder_picker_lbl
-        self.clear_output_path_summary()
-        # ....
-        output_path_picker_controls = QHBoxLayout()
-        output_folder_area.addLayout(output_path_picker_controls)
-        output_path_picker_btn = QPushButton('Choose Folder')
-        output_path_picker_btn.clicked.connect(self.handle_choose_output_path)
-        output_path_picker_controls.addWidget(output_path_picker_btn)
-        output_path_picker_controls.addWidget(output_folder_picker_lbl)
-        output_path_picker_controls.addStretch()
-        self.output_path_picker_btn = output_path_picker_btn
+        output_folder_picker = OutputPicker()
+        output_folder_picker.request_choose_output_folder.connect(self.handle_choose_output_path)
+        conversion_mgr.output_path_updated.connect(output_folder_picker.handle_output_folder_updated)
+        outputs_container.addWidget(output_folder_picker)
+        outputs_container.addWidget(output_settings_box)  # TODO rename and refactor this
+        self.output_folder_picker = output_folder_picker
 
         # TODO remove this, it's now in the step controls
         # # Add conversion launch controls
@@ -840,9 +846,6 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
     def handle_back_clicked(self):
         self.hide()
         self.request_last_step.emit()
-
-    def clear_output_path_summary(self):
-        self.output_path_picker_lbl.setText('(Empty) Select a save folder')
 
     def show_source_folder_stats(self):
         manager = self.conversion_mgr
@@ -868,7 +871,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         status = manager.set_output_path(folder_path)
 
         if status == STATUS_OK:
-            return
+            return  # TODO refactor
         else:
             if status == ERR_FOLDER_DOES_NOT_EXIST:
                 self.show_error_message('Error: Folder does not exist!')
@@ -879,9 +882,6 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
             if status == ERR_FOLDER_INVALID:
                 self.show_error_message('Error: Path is invalid!')
                 return
-
-    def handle_output_path_updated(self, path):
-        self.output_path_picker_lbl.setText(os.path.basename(path))
 
     def handle_file_search_progress(self, match_count, search_count):
         """Handle intermittent file search progress updates, refresh the UI"""
