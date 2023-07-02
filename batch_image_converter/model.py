@@ -271,7 +271,9 @@ class ConversionManager(QObject):
         self.source_extension_filter_updated.emit()
 
     def write_conversion_log(self):
+        print(f'[py_img_batcher] Preparing conversion log...')
         task_record_path = self.get_safe_output_path(os.path.join(self.output_path, 'image_conversion_log'), 'json')
+        print(f'[py_img_batcher] Writing log {task_record_path}')
         with open(task_record_path, 'w', encoding='utf8') as fhandle:
             json.dump(self.target_paths, fhandle, indent=4)
 
@@ -281,8 +283,10 @@ class ConversionManager(QObject):
         name_attempt_counter = -1
         current_name = os.path.join(self.output_path, f'{base_name}.{extension}')
 
+        if os.path.exists(current_name):
+            print(f'[py_img_batcher] File name conflict, name exists (attempting new name):')
         while os.path.exists(current_name):
-            print(f'[py_img_batcher] File {current_name} already exists, attempting new name...')
+            print(f'[py_img_batcher]   {current_name}')
             name_attempt_counter += 1
             current_name = os.path.join(self.output_path, f'{base_name}.{name_attempt_counter:0>4}.{extension}')
 
@@ -297,6 +301,7 @@ class ConversionManager(QObject):
         source_files_handled = 0
         image_path = ''
         for image_path, metadata in self.target_paths.items():
+            print(f'[py_img_batcher] Converting {image_path}')
 
             self.file_save_progress.emit(image_path, source_files_handled, len(self.target_paths))
             if self.cancel_save_flag:

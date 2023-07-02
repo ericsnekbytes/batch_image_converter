@@ -82,7 +82,7 @@ class ExtensionPicker(QWidget):
         self.hide()
 
 
-class SourcePicker(QWidget):
+class SourcePathPicker(QWidget):
     """Holds controls for selecting a source folder"""
 
     request_choose_src_folder = Signal()
@@ -129,7 +129,7 @@ class SourcePicker(QWidget):
         )
 
 
-class OutputPicker(QWidget):
+class OutputPathPicker(QWidget):
     """Holds controls for selecting an output folder"""
 
     request_choose_output_folder = Signal()
@@ -218,7 +218,7 @@ class WizardPickFiles(QWidget):
         settings_container = QSplitter()
         task_area.addWidget(settings_container)
 
-        source_folder_picker = SourcePicker()
+        source_folder_picker = SourcePathPicker()
         source_folder_picker.request_choose_src_folder.connect(self.handle_choose_source_path)
         conversion_mgr.source_path_updated.connect(source_folder_picker.handle_source_folder_updated)
         settings_container.addWidget(source_folder_picker)
@@ -506,7 +506,7 @@ class WizardSaveSettings(QWidget):
         settings_container = QSplitter()
         task_area.addWidget(settings_container)
 
-        output_folder_picker = OutputPicker()
+        output_folder_picker = OutputPathPicker()
         output_folder_picker.request_choose_output_folder.connect(self.handle_choose_output_path)
         conversion_mgr.output_path_updated.connect(output_folder_picker.handle_output_folder_updated)
         settings_container.addWidget(output_folder_picker)
@@ -689,7 +689,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         settings_container = QSplitter()
         layout.addWidget(settings_container)
 
-        source_folder_picker = SourcePicker()
+        source_folder_picker = SourcePathPicker()
         source_folder_picker.request_choose_src_folder.connect(self.handle_choose_source_path)
         conversion_mgr.source_path_updated.connect(source_folder_picker.handle_source_folder_updated)
         settings_container.addWidget(source_folder_picker)
@@ -755,7 +755,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         outputs_container = QSplitter()
         layout.addWidget(outputs_container)
 
-        output_folder_picker = OutputPicker()
+        output_folder_picker = OutputPathPicker()
         output_folder_picker.request_choose_output_folder.connect(self.handle_choose_output_path)
         conversion_mgr.output_path_updated.connect(output_folder_picker.handle_output_folder_updated)
         outputs_container.addWidget(output_folder_picker)
@@ -902,10 +902,6 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         box.resize(300, box.minimumSizeHint().height())
         self.error_modal = box
         box.show()
-
-    def get_extension_matcher(self, extension):
-        if extension.lower() in {}:
-            return
 
     def handle_file_save_progress(self, upcoming_filename, source_files_handled, total_count):
         """Handle intermittent file search progress updates, refresh the UI"""
