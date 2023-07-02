@@ -557,9 +557,6 @@ class WizardSaveSettings(QWidget):
         # Size the widget after adding stuff to the layout
         self.resize(800, self.sizeHint().height())  # Resize children (if needed) below this line
 
-    def clear_output_path_summary(self):
-        self.output_path_picker_lbl.setText('(Empty) Select a save folder')
-
     # TODO move this down
     def handle_choose_output_path(self):
         manager = self.conversion_mgr
@@ -581,9 +578,6 @@ class WizardSaveSettings(QWidget):
             if status == ERR_FOLDER_INVALID:
                 self.show_error_message('Error: Path is invalid!')
                 return
-
-    def handle_output_path_updated(self, path):
-        self.output_path_picker_lbl.setText(os.path.basename(path))
 
     def handle_back_clicked(self):
         self.hide()
@@ -791,50 +785,31 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         self.scale_factor = scale_factor
         self.handle_scale_modifer_update_request(scale_factor.value())
 
-        # TODO refactor outputs_container/output_settings_box
         outputs_container = QSplitter()
         layout.addWidget(outputs_container)
-
-        # Set up output/save-as controls
-        output_settings_box = QGroupBox('Image Save Formats:')
-        output_settings_area = QVBoxLayout()
-        output_settings_box.setLayout(output_settings_area)
-        # ....
-        # Set up save-as extensions picker header
-        # output_ext_picker_header = QHBoxLayout()
-        # output_settings_area.addLayout(output_ext_picker_header)
-        # output_ext_picker_header.addWidget(QLabel('Output Filetype(s):'))
-        output_filter_summary = QLabel()  # Shows a list of selected save-as/output extensions
-        # output_ext_picker_header.addWidget(output_filter_summary)
-        # output_ext_picker_header.addStretch()
-        self.output_filter_summary = output_filter_summary
-        self.update_output_ext_filter_summary()
-        # Set up the save-as extension picker controls
-        output_ext_picker_area = QHBoxLayout()
-        output_settings_area.addLayout(output_ext_picker_area)
-        output_ext_picker_btn = QPushButton('Pick Filetypes')
-        output_ext_picker_btn.clicked.connect(self.handle_output_ext_picker_clicked)
-        output_ext_picker_area.addWidget(output_ext_picker_btn)
-        output_ext_picker_area.addWidget(output_filter_summary)
-        output_ext_picker_area.addStretch()
-        self.output_ext_picker_btn = output_ext_picker_btn
 
         output_folder_picker = OutputPicker()
         output_folder_picker.request_choose_output_folder.connect(self.handle_choose_output_path)
         conversion_mgr.output_path_updated.connect(output_folder_picker.handle_output_folder_updated)
         outputs_container.addWidget(output_folder_picker)
-        outputs_container.addWidget(output_settings_box)  # TODO rename and refactor this
         self.output_folder_picker = output_folder_picker
 
-        # TODO remove this, it's now in the step controls
-        # # Add conversion launch controls
-        # convert_controls = QHBoxLayout()
-        # convert_controls.addStretch()
-        # layout.addLayout(convert_controls)
-        # convert_btn = QPushButton('Convert')
-        # convert_btn.clicked.connect(self.handle_convert)
-        # convert_controls.addWidget(convert_btn)
-        # self.convert_btn = convert_btn
+        save_formats_box = QGroupBox('Image Save Formats:')
+        save_formats_area = QVBoxLayout()
+        save_formats_box.setLayout(save_formats_area)
+        output_filter_summary = QLabel()  # Shows a list of selected save-as/output extensions
+        self.output_filter_summary = output_filter_summary
+        self.update_output_ext_filter_summary()
+        # Set up the save-as extension picker controls
+        output_ext_picker_area = QHBoxLayout()
+        save_formats_area.addLayout(output_ext_picker_area)
+        output_ext_picker_btn = QPushButton('Pick Filetypes')
+        output_ext_picker_btn.clicked.connect(self.handle_output_ext_picker_clicked)
+        output_ext_picker_area.addWidget(output_ext_picker_btn)
+        output_ext_picker_area.addWidget(output_filter_summary)
+        output_ext_picker_area.addStretch()
+        outputs_container.addWidget(save_formats_box)
+        self.output_ext_picker_btn = output_ext_picker_btn
 
         # Size the widget after adding stuff to the layout
         self.resize(800, 600)  # Resize children (if needed) below this line
