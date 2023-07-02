@@ -282,7 +282,7 @@ class ConversionManager(QObject):
         current_name = os.path.join(self.output_path, f'{base_name}.{extension}')
 
         while os.path.exists(current_name):
-            print(f'File {current_name} already exists, attempting new name...')
+            print(f'[py_img_batcher] File {current_name} already exists, attempting new name...')
             name_attempt_counter += 1
             current_name = os.path.join(self.output_path, f'{base_name}.{name_attempt_counter:0>4}.{extension}')
 
