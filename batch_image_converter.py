@@ -11,8 +11,9 @@ import traceback
 # from multiprocessing import Process, Queue
 
 from PIL import Image
-from PySide6.QtWidgets import QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox, QMessageBox, \
-    QTableView, QHeaderView, QStyleFactory, QDialog, QDialogButtonBox, QFrame, QProgressBar, QSplitter, QSizePolicy
+from PySide6.QtWidgets import (QLineEdit, QLabel, QSlider, QFileDialog, QErrorMessage, QCheckBox, QGroupBox,
+                               QMessageBox, QTableView, QHeaderView, QStyleFactory, QDialog, QDialogButtonBox,
+                               QFrame, QProgressBar, QSplitter, QSizePolicy)
 from PySide6.QtCore import Qt, Signal, QAbstractTableModel, QObject
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, QPushButton,
                                QHBoxLayout)
