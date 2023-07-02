@@ -117,13 +117,6 @@ class TargetPathsModel(QAbstractTableModel):
         self.endResetModel()
 
 
-def get_target_paths_model():
-    global _TARGET_PATHS_MODEL
-    if _TARGET_PATHS_MODEL is None:
-        _TARGET_PATHS_MODEL = TargetPathsModel()
-    return _TARGET_PATHS_MODEL
-
-
 class ConversionManager(QObject):
     """Handles conversion data/procedures"""
 
@@ -365,6 +358,13 @@ class ConversionManager(QObject):
             ERRORS: [key for key, val in self.target_paths.items() if val[ERRORS]],
             CANCELED: self.cancel_save_flag,
         }
+
+
+def get_target_paths_model():
+    global _TARGET_PATHS_MODEL
+    if _TARGET_PATHS_MODEL is None:
+        _TARGET_PATHS_MODEL = TargetPathsModel()
+    return _TARGET_PATHS_MODEL
 
 
 def get_conversion_manager():

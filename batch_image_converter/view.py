@@ -1,19 +1,13 @@
 """UI for the image converter"""
 
 
-import datetime
-import json
 import os.path
-import random
-import re
 import sys
-import traceback
 
-from PIL import Image
 from PySide6.QtWidgets import (QLabel, QSlider, QFileDialog, QCheckBox, QGroupBox,
                                QTableView, QHeaderView, QDialogButtonBox,
-                               QProgressBar, QSplitter, QSizePolicy)
-from PySide6.QtCore import Qt, Signal, QObject
+                               QProgressBar, QSplitter)
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,
                                QHBoxLayout)
 
@@ -206,12 +200,6 @@ class WizardPickFiles(QWidget):
         step_nav_box.setLayout(step_navigation_area)
         layout.addWidget(step_nav_box)
 
-        # step_nav_divider = QFrame()
-        # step_nav_divider.setFrameShadow(QFrame.Raised)
-        # step_nav_divider.setFrameShape(QFrame.HLine)
-        # step_nav_divider.setMidLineWidth(.5)
-        # layout.addWidget(step_nav_divider)
-
         next_btn = QPushButton('Next')
         next_btn.clicked.connect(self.handle_next_clicked)
         self.next_btn = next_btn
@@ -243,12 +231,6 @@ class WizardPickFiles(QWidget):
         settings_container.addWidget(settings_box)
         # ....
         # Set up a source-filetypes summary and controls
-        # src_formats_header = QHBoxLayout()
-        # settings_area.addLayout(src_formats_header)
-        # Set up the source-filetypes extension picker header
-        # src_extensions_header = QHBoxLayout()  # TODO refactor and remove these
-        # src_extensions_header.addWidget(QLabel('Selected Filetypes:'))
-        # settings_area.addLayout(src_extensions_header)
         src_extensions_summary = QLabel()
         self.src_extensions_summary = src_extensions_summary
         self.update_input_ext_filter_summary()  # Shows a list of selected extensions
@@ -319,14 +301,12 @@ class WizardPickFiles(QWidget):
         self.error_modal = box
         box.show()
 
-    def show_source_folder_stats(self):
-        manager = self.conversion_mgr
-        source_path = manager.get_source_path()
-
-        self.source_folder_picker.handle_source_folder_updated(
-            source_path,
-            manager.get_target_paths()
-        )
+    def handle_file_search_progress(self, match_count, search_count):
+        """Handle intermittent file search progress updates, refresh the UI"""
+        if self.isVisible():
+            popup = self.file_search_progress_modal
+            popup.set_message(f'({match_count:,}) matches\n({search_count:,}) searched...')
+            QApplication.instance().processEvents()
 
     def set_folder_choose_cancel_flag(self):
         # Set the cancel flag on the widget
@@ -336,12 +316,14 @@ class WizardPickFiles(QWidget):
     def handle_search_progress_popup_ok(self):
         self.file_search_progress_modal.hide()
 
-    def handle_file_search_progress(self, match_count, search_count):
-        """Handle intermittent file search progress updates, refresh the UI"""
-        if self.isVisible():
-            popup = self.file_search_progress_modal
-            popup.set_message(f'({match_count:,}) matches\n({search_count:,}) searched...')
-            QApplication.instance().processEvents()
+    def show_source_folder_stats(self):
+        manager = self.conversion_mgr
+        source_path = manager.get_source_path()
+
+        self.source_folder_picker.handle_source_folder_updated(
+            source_path,
+            manager.get_target_paths()
+        )
 
     def handle_choose_source_path(self):
         manager = self.conversion_mgr
@@ -387,7 +369,7 @@ class WizardPickFiles(QWidget):
             box.set_message('Image search was canceled')
         else:
             box.set_message(
-                f'Finished with {len(result[TARGETS])} images found, {len(result[ERRORS])} files with errors'
+                f'Finished with {len(result[TARGETS])} images found, {len(result[ERRORS])} errors'
             )  # TODO add total filecount
         box.disable_button(QDialogButtonBox.Cancel)
         box.enable_button(QDialogButtonBox.Ok)
@@ -536,12 +518,7 @@ class WizardSaveSettings(QWidget):
         output_settings_area = QVBoxLayout()
         output_settings_box.setLayout(output_settings_area)
         # ....
-        # Set up save-as extensions picker header
-        # output_ext_picker_header = QHBoxLayout()
-        # output_settings_area.addLayout(output_ext_picker_header)
-        # output_ext_picker_header.addWidget(QLabel('Output Filetype(s):'))
         output_filter_summary = QLabel()  # Shows a list of selected save-as/output extensions
-        # output_ext_picker_header.addStretch()
         self.output_filter_summary = output_filter_summary
         self.update_output_ext_filter_summary()
         # Set up the save-as extension picker controls
@@ -556,28 +533,6 @@ class WizardSaveSettings(QWidget):
 
         # Size the widget after adding stuff to the layout
         self.resize(800, self.sizeHint().height())  # Resize children (if needed) below this line
-
-    # TODO move this down
-    def handle_choose_output_path(self):
-        manager = self.conversion_mgr
-
-        folder_path = QFileDialog.getExistingDirectory(self)
-        if folder_path:
-            folder_path = os.path.abspath(folder_path)
-        status = manager.set_output_path(folder_path)
-
-        if status == STATUS_OK:
-            return
-        else:
-            if status == ERR_FOLDER_DOES_NOT_EXIST:
-                self.show_error_message('Error: Folder does not exist!')
-                return
-            if status == ERR_PATH_IS_NOT_FOLDER:
-                self.show_error_message('Error: Path is not a folder!')
-                return
-            if status == ERR_FOLDER_INVALID:
-                self.show_error_message('Error: Path is invalid!')
-                return
 
     def handle_back_clicked(self):
         self.hide()
@@ -600,6 +555,27 @@ class WizardSaveSettings(QWidget):
 
     def update_output_ext_filter_summary(self):
         self.output_filter_summary.setText(','.join(sorted([ext for ext, state in self.conversion_mgr.get_file_save_filters().items() if state])))
+
+    def handle_choose_output_path(self):
+        manager = self.conversion_mgr
+
+        folder_path = QFileDialog.getExistingDirectory(self)
+        if folder_path:
+            folder_path = os.path.abspath(folder_path)
+        status = manager.set_output_path(folder_path)
+
+        if status == STATUS_OK:
+            return
+        else:
+            if status == ERR_FOLDER_DOES_NOT_EXIST:
+                self.show_error_message('Error: Folder does not exist!')
+                return
+            if status == ERR_PATH_IS_NOT_FOLDER:
+                self.show_error_message('Error: Path is not a folder!')
+                return
+            if status == ERR_FOLDER_INVALID:
+                self.show_error_message('Error: Path is invalid!')
+                return
 
 
 class CustomModal(QWidget):
@@ -740,15 +716,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         source_ext_area = QVBoxLayout()
         source_ext_box.setLayout(source_ext_area)
         settings_container.addWidget(source_ext_box)
-        # src_formats_header = QHBoxLayout()
-        # source_ext_area.addLayout(src_formats_header)
-        # Set up the source-filetypes extension picker header
-        # src_extensions_header = QHBoxLayout()
-        # src_extensions_header.addWidget(QLabel('File Search Settings:'))
-        # source_ext_area.addLayout(src_extensions_header)
         src_extensions_summary = QLabel()
-        # src_extensions_header.addWidget(src_extensions_summary)
-        # src_extensions_header.addStretch()
         self.src_extensions_summary = src_extensions_summary
         self.update_input_ext_filter_summary()  # Shows a list of selected extensions
         # Set up the extensions picker controls
@@ -765,7 +733,6 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         image_mod_settings_area = QVBoxLayout()
         image_mod_settings_box.setLayout(image_mod_settings_area)
         layout.addWidget(image_mod_settings_box)
-        # ....
         # ....
         # Set up scale factor controls
         scale_factor_header = QHBoxLayout()
@@ -815,8 +782,6 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         self.resize(800, 600)  # Resize children (if needed) below this line
         targets_view.setColumnWidth(0, targets_view.width() / 2)
         targets_view.setColumnWidth(1, targets_view.width() / 2)
-        # # Auto show() the widget!
-        # self.show()
 
     def handle_back_clicked(self):
         self.hide()
@@ -916,7 +881,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
             box.set_message('Image search was canceled')
         else:
             box.set_message(
-                f'Finished with {len(result[TARGETS])} images found, {len(result[ERRORS])} files with errors'
+                f'Finished with {len(result[TARGETS])} images found, {len(result[ERRORS])} errors'
             )  # TODO add total filecount
         box.disable_button(QDialogButtonBox.Cancel)
         box.enable_button(QDialogButtonBox.Ok)
@@ -975,7 +940,6 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         ok_btn = box.button(QDialogButtonBox.Ok)
         ok_btn.clicked.connect(self.handle_save_progress_popup_ok)
         box.disable_button(QDialogButtonBox.Ok)
-        # TODO Fix, this is broken for multiple-output-image scenarios
         progress_bar = QProgressBar()
         progress_bar.setMinimum(0)
         progress_bar.setMaximum(len(manager.get_target_paths()))
@@ -994,7 +958,7 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
             box.set_message('Image conversion was canceled')
         else:
             box.set_message(
-                f'Finished with {len(result[TARGETS])} input images processed, {len(result[ERRORS])} files with errors'
+                f'Finished with {len(result[TARGETS])} input images processed, {len(result[ERRORS])} errors'
             )  # TODO add total filecount
         box.disable_button(QDialogButtonBox.Cancel)
         box.enable_button(QDialogButtonBox.Ok)
