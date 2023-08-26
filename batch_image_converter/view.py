@@ -536,6 +536,20 @@ class WizardSaveSettings(QWidget):
         # Size the widget after adding stuff to the layout
         self.resize(800, self.sizeHint().height())  # Resize children (if needed) below this line
 
+    def show_error_message(self, message):
+        # TODO possibly deduplicate/mixin this
+        # Show a message popup (has an okay button only)
+        box = CustomModal('Error!', message, [QDialogButtonBox.Ok])
+
+        # Ok button should close the modal
+        ok_btn = box.button(QDialogButtonBox.Ok)
+        ok_btn.clicked.connect(box.hide)
+
+        # Size and hold a reference to the window
+        box.resize(300, box.minimumSizeHint().height())
+        self.error_modal = box
+        box.show()
+
     def handle_back_clicked(self):
         self.hide()
         self.request_last_step.emit()
