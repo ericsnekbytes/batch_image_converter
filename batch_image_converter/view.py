@@ -1000,7 +1000,3 @@ def run_gui():
 
     # Run the program/start the event loop with exec()
     sys.exit(app.exec())
-
-
-if __name__ == '__main__':
-    run_gui()
