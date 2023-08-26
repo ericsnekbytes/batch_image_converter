@@ -260,26 +260,6 @@ class WizardPickFiles(QWidget):
         settings_container.addWidget(source_folder_picker)
         self.source_folder_picker = source_folder_picker
 
-        # # Add a settings area
-        # settings_area = QVBoxLayout()
-        # settings_box = QGroupBox('File Search Settings:')
-        # settings_box.setLayout(settings_area)
-        # settings_container.addWidget(settings_box)
-        # # ....
-        # # Set up a source-filetypes summary and controls
-        # formats_summary = QLabel()
-        # self.formats_summary = formats_summary
-        # self.update_input_ext_filter_summary()  # Shows a list of selected extensions
-        # # Set up the extensions picker controls
-        # src_ext_picker_controls = QHBoxLayout()
-        # settings_area.addLayout(src_ext_picker_controls)
-        # src_ext_picker_btn = QPushButton('Pick Filetypes')
-        # src_ext_picker_btn.clicked.connect(self.handle_input_ext_picker_clicked)
-        # src_ext_picker_controls.addWidget(src_ext_picker_btn)
-        # src_ext_picker_controls.addWidget(formats_summary)
-        # src_ext_picker_controls.addStretch()
-        # self.formats_picker_btn = src_ext_picker_btn
-
         source_formats_picker = FileFormatsPicker('File Search Settings:')
         source_formats_picker.update_formats_summary(conversion_mgr.get_file_search_filters())
         conversion_mgr.source_extension_filter_updated.connect(source_formats_picker.update_formats_summary)
@@ -318,10 +298,6 @@ class WizardPickFiles(QWidget):
 
     def handle_input_extensions_update_request(self, ext_name, check_state):
         self.conversion_mgr.set_file_search_filter(ext_name, check_state)
-
-    # def handle_input_extensions_updated(self):
-    #     self.update_input_ext_filter_summary()
-    #     self.input_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_search_filters())
 
     def handle_choose_input_formats(self):
         self.input_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_search_filters())
@@ -551,25 +527,6 @@ class WizardSaveSettings(QWidget):
         settings_container.addWidget(output_folder_picker)
         self.output_folder_picker = output_folder_picker
 
-        # # Set up output/save-as controls
-        # output_settings_box = QGroupBox('Image Save Formats:')
-        # settings_container.addWidget(output_settings_box)
-        # output_settings_area = QVBoxLayout()
-        # output_settings_box.setLayout(output_settings_area)
-        # # ....
-        # output_filter_summary = QLabel()  # Shows a list of selected save-as/output extensions
-        # self.output_filter_summary = output_filter_summary
-        # self.update_output_ext_filter_summary()
-        # # Set up the save-as extension picker controls
-        # output_ext_picker_area = QHBoxLayout()
-        # output_settings_area.addLayout(output_ext_picker_area)
-        # output_ext_picker_btn = QPushButton('Pick Filetypes')
-        # output_ext_picker_btn.clicked.connect(self.handle_output_ext_picker_clicked)
-        # output_ext_picker_area.addWidget(output_ext_picker_btn)
-        # output_ext_picker_area.addWidget(output_filter_summary)
-        # output_ext_picker_area.addStretch()
-        # self.output_ext_picker_btn = output_ext_picker_btn
-
         output_formats_picker = FileFormatsPicker('Image Save Formats:')
         output_formats_picker.update_formats_summary(conversion_mgr.get_file_save_filters())
         conversion_mgr.output_extension_filter_updated.connect(output_formats_picker.update_formats_summary)
@@ -587,23 +544,12 @@ class WizardSaveSettings(QWidget):
         self.hide()
         self.request_next_step.emit()
 
-    # def handle_output_ext_picker_clicked(self):
-    #     self.output_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_save_filters())
-    #     self.output_ext_picker_modal.show()
-
     def handle_choose_output_formats(self):
         self.output_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_save_filters())
         self.output_ext_picker_modal.show()
 
     def handle_output_extensions_update_request(self, ext_name, check_state):
         self.conversion_mgr.set_file_save_filter(ext_name, check_state)
-
-    # def handle_output_extensions_updated(self):
-    #     self.update_output_ext_filter_summary()
-    #     self.output_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_save_filters())
-    #
-    # def update_output_ext_filter_summary(self):
-    #     self.output_filter_summary.setText(','.join(sorted([ext for ext, state in self.conversion_mgr.get_file_save_filters().items() if state])))
 
     def handle_choose_output_path(self):
         manager = self.conversion_mgr
@@ -759,24 +705,6 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         layout.addWidget(targets_view)
         self.targets_table = targets_view  # TODO renaming
 
-        # # Set up a source-filetypes summary and controls
-        # source_ext_box = QGroupBox('File Search Settings:')
-        # source_ext_area = QVBoxLayout()
-        # source_ext_box.setLayout(source_ext_area)
-        # settings_container.addWidget(source_ext_box)
-        # src_extensions_summary = QLabel()
-        # self.src_extensions_summary = src_extensions_summary
-        # self.update_input_ext_filter_summary()  # Shows a list of selected extensions
-        # # Set up the extensions picker controls
-        # src_ext_picker_controls = QHBoxLayout()
-        # source_ext_area.addLayout(src_ext_picker_controls)
-        # src_ext_picker_btn = QPushButton('Pick Filetypes')
-        # src_ext_picker_btn.clicked.connect(self.handle_input_ext_picker_clicked)
-        # src_ext_picker_controls.addWidget(src_ext_picker_btn)
-        # src_ext_picker_controls.addWidget(src_extensions_summary)
-        # src_ext_picker_controls.addStretch()
-        # self.extension_picker_btn = src_ext_picker_btn
-
         source_formats_picker = FileFormatsPicker('File Search Settings:')
         source_formats_picker.update_formats_summary(conversion_mgr.get_file_search_filters())
         conversion_mgr.source_extension_filter_updated.connect(source_formats_picker.update_formats_summary)
@@ -815,28 +743,11 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
         outputs_container.addWidget(output_folder_picker)
         self.output_folder_picker = output_folder_picker
 
-        # save_formats_box = QGroupBox('Image Save Formats:')
-        # save_formats_area = QVBoxLayout()
-        # save_formats_box.setLayout(save_formats_area)
-        # output_filter_summary = QLabel()  # Shows a list of selected save-as/output extensions
-        # self.output_filter_summary = output_filter_summary
-        # self.update_output_ext_filter_summary()
-        # # Set up the save-as extension picker controls
-        # output_ext_picker_area = QHBoxLayout()
-        # save_formats_area.addLayout(output_ext_picker_area)
-        # output_ext_picker_btn = QPushButton('Pick Filetypes')
-        # output_ext_picker_btn.clicked.connect(self.handle_output_ext_picker_clicked)
-        # output_ext_picker_area.addWidget(output_ext_picker_btn)
-        # output_ext_picker_area.addWidget(output_filter_summary)
-        # output_ext_picker_area.addStretch()
-        # outputs_container.addWidget(save_formats_box)
-        # self.output_ext_picker_btn = output_ext_picker_btn
-
         output_formats_picker = FileFormatsPicker('Image Save Formats:')
         output_formats_picker.update_formats_summary(conversion_mgr.get_file_save_filters())
         conversion_mgr.output_extension_filter_updated.connect(output_formats_picker.update_formats_summary)
         output_formats_picker.request_choose_formats.connect(self.handle_choose_output_formats)
-        settings_container.addWidget(output_formats_picker)
+        outputs_container.addWidget(output_formats_picker)
 
         # Size the widget after adding stuff to the layout
         self.resize(800, 600)  # Resize children (if needed) below this line
@@ -1024,34 +935,15 @@ class WizardSummaryScreen(QWidget):  # TODO renaming/step4
     def set_save_cancel_flag(self):
         self.conversion_mgr.request_cancel_save()
 
-    # def update_input_ext_filter_summary(self):
-    #     self.src_extensions_summary.setText(','.join(sorted([ext for ext, state in self.conversion_mgr.get_file_search_filters().items() if state])))
-    #
-    # def update_output_ext_filter_summary(self):
-    #     self.output_filter_summary.setText(','.join(sorted([ext for ext, state in self.conversion_mgr.get_file_save_filters().items() if state])))
-
     def handle_input_extensions_update_request(self, ext_name, check_state):
         self.conversion_mgr.set_file_search_filter(ext_name, check_state)
-
-    def handle_input_extensions_updated(self):
-        self.update_input_ext_filter_summary()
-        self.input_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_search_filters())
 
     def handle_output_extensions_update_request(self, ext_name, check_state):
         self.conversion_mgr.set_file_save_filter(ext_name, check_state)
 
-    def handle_output_extensions_updated(self):
-        self.update_output_ext_filter_summary()
-        self.output_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_save_filters())
-
     def handle_choose_input_formats(self):
         self.input_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_search_filters())
         self.input_ext_picker_modal.show()
-
-    # # TODO clean up manager access on these
-    # def handle_output_ext_picker_clicked(self):
-    #     self.output_ext_picker_modal.set_check_states(self.conversion_mgr.get_file_save_filters())
-    #     self.output_ext_picker_modal.show()
 
     # TODO clean up manager access on these
     def handle_choose_output_formats(self):
