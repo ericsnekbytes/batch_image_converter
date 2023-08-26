@@ -125,8 +125,8 @@ class ConversionManager(QObject):
     ready_for_ui_events = Signal()
     source_path_updated = Signal(str, object)
     output_path_updated = Signal(str)
-    source_extension_filter_updated = Signal()
-    output_extension_filter_updated = Signal()
+    source_extension_filter_updated = Signal(object)
+    output_extension_filter_updated = Signal(object)
     modifier_scale_updated = Signal(int)
 
     def __init__(self):
@@ -264,11 +264,11 @@ class ConversionManager(QObject):
 
     def set_file_save_filter(self, ext_name, check_state):
         self.output_extension_filter[ext_name] = check_state
-        self.output_extension_filter_updated.emit()
+        self.output_extension_filter_updated.emit(self.get_file_save_filters())
 
     def set_file_search_filter(self, ext_name, check_state):
         self.source_extension_filter[ext_name] = check_state
-        self.source_extension_filter_updated.emit()
+        self.source_extension_filter_updated.emit(self.get_file_search_filters())
 
     def write_conversion_log(self):
         print(f'[py_img_batcher] Preparing conversion log...')
