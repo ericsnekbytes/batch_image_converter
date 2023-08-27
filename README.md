@@ -1,6 +1,6 @@
 # Batch Image Converter (Tentative Title)
 
-*NOTE: This project is in-progress*
+*NOTE: This project is in pre-release, wait for a full release for a better install experience*
 
 Want to easily convert a lot of images to others formats? This project is for you!
 
@@ -19,6 +19,11 @@ will be resolved automatically by appending "conflicting_name.0001.jpg" number s
 
 Scale your images or add other modifiers (percent scaling is the only modifier currently).
 
-# That's it!
+### That's it!
 
 Use the "Start Conversion" button to begin. You'll get a status bar, and a log file with a status for each file.
+
+## Installation
+
+This project is in pre-release, right now you can run from source in an environment with `PySide6` and `pillow`.
+Check back later for pre-built binaries.
